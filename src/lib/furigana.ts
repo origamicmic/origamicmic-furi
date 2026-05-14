@@ -88,21 +88,24 @@ const KANJI_FALLBACK: Record<string, string> = {
   "淵": "ふち",
   "湊": "みなと",
   "甦": "よみがえ",
+  "其": "そ",
+  "此": "こ",
+  "等": "など",
 }
 
-const VERB_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "れる", "ける", "める", "べる", "じる", "ずる"]
+const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "の", "れ", "た", "て", "れる", "ける", "める", "べる", "じる", "ずる"]
 
 async function tryPseudoWordFallback(ch: string, to: "hiragana" | "romaji"): Promise<string | null> {
   if (!kuroshiroInstance) return null
-  for (const suffix of VERB_SUFFIXES) {
+  for (const suffix of PSEUDO_SUFFIXES) {
     try {
       const word = ch + suffix
       const reading = await kuroshiroInstance.convert(word, { to: "hiragana" })
-      if (reading !== word && reading.length > suffix.length) {
+      if (reading !== word && reading.length > suffix.length && reading.endsWith(suffix)) {
         const stem = reading.slice(0, reading.length - suffix.length)
         if (to === "romaji") {
           const r = await kuroshiroInstance.convert(stem, { to: "romaji" })
-          return r !== stem ? r : stem
+          return r !== stem ? normalizeRomaji(r) : normalizeRomaji(stem)
         }
         return stem
       }
@@ -143,8 +146,6 @@ const FURIGANA_PATTERNS: FuriganaPattern[] = [
     replacer: (m: string) => m.replace(/[(（][\u3040-\u309f\u30a0-\u30ffa-zA-Z]+[)）]/, '') },
   { pattern: /[(（][\u3040-\u309f\u30a0-\u30ffa-zA-Z]+[)）]/g, replacement: '' },
   { pattern: /\[[\u3040-\u309f\u30a0-\u30ffa-zA-Z]+\]/g, replacement: '' },
-  { pattern: /([\u4e00-\u9fff\u3400-\u4dbf]+)([a-zA-Z]{1,15})(?=[\s\u3040-\u309f\u30a0-\u30ff.,:;!?）\)\]\n]|$)/g, replacement: '$1' },
-  { pattern: /([a-zA-Z]{1,15})([\u4e00-\u9fff\u3400-\u4dbf]+)(?=[\s\u3040-\u309f\u30a0-\u30ff.,:;!?）\)\]\n]|$)/g, replacement: '$2' },
 ]
 
 export function cleanLyricsText(text: string): string {
@@ -314,7 +315,7 @@ export async function convertLine(
     const combined = a.surface + b.surface
     try {
       const r = await kuroshiroInstance!.convert(combined, { to: "hiragana" })
-      if (r !== combined && r !== a.reading + b.reading) {
+      if (r !== combined) {
         const mergedToken = { ...a, surface: combined, reading: r, tokenId: a.tokenId }
         merged = [...merged.slice(0, i), mergedToken, ...merged.slice(i + 2)]
         i--

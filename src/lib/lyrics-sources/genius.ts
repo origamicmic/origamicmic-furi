@@ -72,21 +72,45 @@ export class GeniusSource implements LyricsSource {
     if (!match) match = html.match(/<section[^>]*class="[^"]*lyrics[^"]*"[^>]*>([\s\S]*?)<\/section>/gi)
     // Fallback: extract text from pre/lyrics content blocks
     if (!match) match = html.match(/<div[^>]*(?:data-lyrics|lyrics)[^>]*>([\s\S]*?)<\/div>/gi)
-    if (!match) throw new Error("Could not extract lyrics from page")
+    let lyricsText = ""
+    if (match) {
+      lyricsText = match
+        .map((block: string) =>
+          block
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<[^>]+>/g, "")
+            .replace(/&amp;/g, "&")
+            .replace(/&lt;/g, "<")
+            .replace(/&gt;/g, ">")
+            .replace(/&quot;/g, '"')
+            .replace(/&#x27;/g, "'")
+            .trim()
+        )
+        .join("\n")
+    } else {
+      // Fallback: extract from __NEXT_DATA__ JSON (Genius React SSR)
+      const jsonMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(\{[\s\S]*?\})<\/script>/i)
+      if (jsonMatch) {
+        try {
+          const nextData = JSON.parse(jsonMatch[1])
+          const children: unknown[] = nextData?.props?.pageProps?.songPage?.lyricsData?.body?.children
+          if (Array.isArray(children)) {
+            const lines: string[] = []
+            for (const child of children) {
+              if (typeof child === "string") { lines.push(child); continue }
+              if (child && typeof child === "object" && Array.isArray((child as Record<string, unknown>).children)) {
+                for (const c of (child as Record<string, unknown[]>).children) {
+                  if (typeof c === "string") lines.push(c)
+                }
+              }
+            }
+            lyricsText = lines.join("\n")
+          }
+        } catch { /* JSON parse failed */ }
+      }
+    }
+    if (!lyricsText.trim()) throw new Error("Could not extract lyrics from page")
 
-    return match
-      .map((block: string) =>
-        block
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<[^>]+>/g, "")
-          .replace(/&amp;/g, "&")
-          .replace(/&lt;/g, "<")
-          .replace(/&gt;/g, ">")
-          .replace(/&quot;/g, '"')
-          .replace(/&#x27;/g, "'")
-          .trim()
-      )
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
+    return lyricsText.replace(/\n{3,}/g, "\n\n")
   }
 }
