@@ -131,22 +131,25 @@ export default function Home() {
       try {
         let neteaseId = song.source === "netease" ? song.id : null
         if (!neteaseId) {
-          // Relaxed matching: try full title+artist, then title only, then artist only
-          const queries = [`${song.title} ${song.artist}`, song.title, song.artist]
+          const queries = [`${song.title} ${song.artist}`, song.title.slice(0, 25), song.artist.slice(0, 25)]
           for (const q of queries) {
             if (neteaseId) break
             try {
               const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
               const d = await r.json()
-              const match = (d.songs ?? []).find((s: { source: string }) => s.source === "netease")
+              const match = (d.songs ?? []).find((s: { source: string; title: string; artist: string }) =>
+                s.source === "netease" &&
+                (s.title.toLowerCase().includes(song.title.toLowerCase().slice(0, 5)) ||
+                 s.artist.toLowerCase().includes(song.artist.toLowerCase().slice(0, 5)))
+              )
               if (match) neteaseId = match.id
             } catch {}
           }
         }
         if (neteaseId) {
-          const r = await fetch(`/api/audio?source=netease&id=${neteaseId}`)
-          const d = await r.json()
-          if (d.url) { setAudioUrl(d.url); setAudioTitle(song.title); setAudioArtist(song.artist) }
+          setAudioUrl(`/api/audio?source=netease&id=${neteaseId}`)
+          setAudioTitle(song.title)
+          setAudioArtist(song.artist)
         }
       } catch { /* no audio */ }
     },

@@ -51,13 +51,14 @@ export class GeniusSource implements LyricsSource {
     }
 
     const data = await res.json<{
-      response?: { song?: { path?: string } }
+      response?: { song?: { path?: string; url?: string } }
     }>()
 
-    const path = data.response?.song?.path
-    if (!path) throw new Error("No lyrics path found")
+    const song = data.response?.song
+    const pagePath = song?.path || song?.url
+    if (!pagePath) throw new Error("No lyrics path found")
 
-    const htmlRes = await httpGet(`https://genius.com${path}`)
+    const htmlRes = await httpGet(`https://genius.com${pagePath}`)
     const html = await htmlRes.text()
 
     // Primary pattern: data-lyrics-container="true"

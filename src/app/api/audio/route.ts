@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server"
 
-const audioCache = new Map<string, { url: string | null; timestamp: number }>()
+const audioCache = new Map<string, { body: ReadableStream | null; timestamp: number }>()
 const AUDIO_CACHE_TTL = 30 * 60 * 1000
 
 export async function GET(request: NextRequest) {
@@ -9,13 +9,14 @@ export async function GET(request: NextRequest) {
   const id = searchParams.get("id")
 
   if (source !== "netease" || !id) {
-    return Response.json({ url: null })
+    return new Response(null, { status: 404 })
   }
 
   const cacheKey = `${source}:${id}`
   const cached = audioCache.get(cacheKey)
   if (cached && Date.now() - cached.timestamp < AUDIO_CACHE_TTL) {
-    return Response.json({ url: cached.url })
+    if (!cached.body) return new Response(null, { status: 404 })
+    return new Response(cached.body, { headers: { "Content-Type": "audio/mpeg" } })
   }
 
   const urls = [
@@ -32,13 +33,13 @@ export async function GET(request: NextRequest) {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         },
       })
-      if (res.ok && res.url && !res.url.includes("music.163.com/song/media/outer")) {
-        audioCache.set(cacheKey, { url: res.url, timestamp: Date.now() })
-        return Response.json({ url: res.url })
+      if (res.ok && res.body && !res.url.includes("music.163.com/song/media/outer")) {
+        audioCache.set(cacheKey, { body: res.body, timestamp: Date.now() })
+        return new Response(res.body, { headers: { "Content-Type": "audio/mpeg" } })
       }
     } catch { /* next url */ }
   }
 
-  audioCache.set(cacheKey, { url: null, timestamp: Date.now() })
-  return Response.json({ url: null })
+  audioCache.set(cacheKey, { body: null, timestamp: Date.now() })
+  return new Response(null, { status: 404 })
 }

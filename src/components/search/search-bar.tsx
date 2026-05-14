@@ -38,8 +38,10 @@ export function SearchBar({
 
   useEffect(() => {
     if (forceOpen && forceOpen > 0) {
-      setOpen(true)
-      inputRef.current?.focus()
+      setTimeout(() => {
+        setOpen(true)
+        inputRef.current?.focus()
+      }, 150)
     }
   }, [forceOpen])
 
