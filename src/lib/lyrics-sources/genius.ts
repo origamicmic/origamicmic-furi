@@ -58,15 +58,20 @@ export class GeniusSource implements LyricsSource {
     const pagePath = song?.path || song?.url
     if (!pagePath) throw new Error("No lyrics path found")
 
-    const htmlRes = await httpGet(`https://genius.com${pagePath}`)
+    const htmlRes = await httpGet(`https://genius.com${pagePath}`, {
+      Authorization: `Bearer ${this.token}`,
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    })
     const html = await htmlRes.text()
 
-    // Primary pattern: data-lyrics-container="true"
-    let match = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi) 
-    // Fallback: LyricText classes
+    // Primary: data-lyrics-container
+    let match = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi)
+    // Fallback: Lyrics__Container class (Genius v2023+)
     if (!match) match = html.match(/<div[^>]*class="[^"]*Lyrics__Container[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)
-    // Fallback: any lyrics section
+    // Fallback: section with lyrics class
     if (!match) match = html.match(/<section[^>]*class="[^"]*lyrics[^"]*"[^>]*>([\s\S]*?)<\/section>/gi)
+    // Fallback: extract text from pre/lyrics content blocks
+    if (!match) match = html.match(/<div[^>]*(?:data-lyrics|lyrics)[^>]*>([\s\S]*?)<\/div>/gi)
     if (!match) throw new Error("Could not extract lyrics from page")
 
     return match

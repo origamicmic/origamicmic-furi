@@ -47,15 +47,25 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
   // Try primary source
   for (const source of sources) {
     if (source.name === song.source) {
-      try { return await source.fetchLyrics(song.id) } catch { break }
+      try { return await source.fetchLyrics(song.id) } catch {}
     }
   }
 
   // Fallback: try lyricsovh with artist|title
   for (const source of sources) {
     if (source.name === "lyricsovh") {
+      try { return await source.fetchLyrics(`${song.artist}|${song.title}`) } catch {}
+    }
+  }
+
+  // Final fallback: try netease search by title+artist
+  for (const source of sources) {
+    if (source.name === "netease") {
       try {
-        return await source.fetchLyrics(`${song.artist}|${song.title}`)
+        const searchResults = await source.search(`${song.title} ${song.artist}`)
+        if (searchResults.length > 0) {
+          return source.fetchLyrics(searchResults[0].id)
+        }
       } catch {}
     }
   }
