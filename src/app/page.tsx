@@ -42,6 +42,7 @@ export default function Home() {
   const [showSearchHint, setShowSearchHint] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
   const [noLyricsSongs, setNoLyricsSongs] = useState<Set<string>>(new Set())
+  const [forceOpenSearch, setForceOpenSearch] = useState(0)
   const lastLyricsRef = useRef<string>("")
   const lastModeRef = useRef<ConvertMode>(convertMode)
 
@@ -115,19 +116,32 @@ export default function Home() {
   const handleSelectSong = useCallback(
     async (song: { id: string; title: string; artist: string; source: string }) => {
       const key = `${song.source}-${song.id}`
-      if (noLyricsSongs.has(key)) { search.setError("该歌曲没有歌词（可能是纯音乐）"); return }
+      if (noLyricsSongs.has(key)) {
+        search.setError("该歌曲没有歌词（可能是纯音乐）")
+        setForceOpenSearch((n) => n + 1)
+        return
+      }
       const ok = await search.selectSong(song)
       if (!ok) {
         setNoLyricsSongs((prev) => new Set(prev).add(key))
+        search.setError("该歌曲没有歌词（可能是纯音乐）")
+        setForceOpenSearch((n) => n + 1)
         return
       }
       try {
         let neteaseId = song.source === "netease" ? song.id : null
         if (!neteaseId) {
-          const r = await fetch(`/api/search?q=${encodeURIComponent(`${song.title} ${song.artist}`)}`)
-          const d = await r.json()
-          const match = (d.songs ?? []).find((s: { source: string }) => s.source === "netease")
-          if (match) neteaseId = match.id
+          // Relaxed matching: try full title+artist, then title only, then artist only
+          const queries = [`${song.title} ${song.artist}`, song.title, song.artist]
+          for (const q of queries) {
+            if (neteaseId) break
+            try {
+              const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
+              const d = await r.json()
+              const match = (d.songs ?? []).find((s: { source: string }) => s.source === "netease")
+              if (match) neteaseId = match.id
+            } catch {}
+          }
         }
         if (neteaseId) {
           const r = await fetch(`/api/audio?source=netease&id=${neteaseId}`)
@@ -163,11 +177,11 @@ export default function Home() {
         {!hasLyrics ? (
           <div className="mx-auto flex w-full max-w-2xl flex-col items-center justify-center gap-8 px-4 py-20">
             <div className="text-center">
-              <h1 className="text-4xl font-bold tracking-[0.2em] text-[oklch(0.45_0.06_40)] dark:text-[oklch(0.7_0.06_40)]"
+              <h1 className="text-4xl font-bold tracking-[0.08em] text-[oklch(0.45_0.06_40)] dark:text-[oklch(0.7_0.06_40)]"
                 style={{ textShadow: "2px 2px 0 oklch(0.85_0.02_60 / 0.4)" }}>
                   Origamicmic Furi
               </h1>
-              <p className="mt-3 text-sm tracking-[0.15em] text-muted-foreground/60">日语歌词注音 · 罗马音转换</p>
+              <p className="mt-3 text-sm tracking-[0.06em] text-muted-foreground/60">日语歌词注音 · 罗马音转换</p>
             </div>
 
             {kuroshiroError && (
@@ -190,7 +204,7 @@ export default function Home() {
                     }
                   }}
                   onSelect={handleSelectSong} error={search.error}
-                  noLyricsSongs={noLyricsSongs} />
+                  noLyricsSongs={noLyricsSongs} forceOpen={forceOpenSearch} />
                 {showSearchHint && (
                   <p className="absolute top-[310px] left-0 right-0 text-center text-sm text-muted-foreground/60">
                     卡住了？试试输入歌曲名，或

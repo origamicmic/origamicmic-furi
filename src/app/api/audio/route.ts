@@ -18,41 +18,27 @@ export async function GET(request: NextRequest) {
     return Response.json({ url: cached.url })
   }
 
-  try {
-    const res = await fetch(
-      `https://music.163.com/song/media/outer/url?id=${id}.mp3`,
-      {
-        redirect: "manual",
+  const urls = [
+    `https://music.163.com/song/media/outer/url?id=${id}.mp3`,
+    `https://music.163.com/song/media/outer/url?id=${id}`,
+  ]
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        redirect: "follow",
         headers: {
           Referer: "https://music.163.com",
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         },
+      })
+      if (res.ok && res.url && !res.url.includes("music.163.com/song/media/outer")) {
+        audioCache.set(cacheKey, { url: res.url, timestamp: Date.now() })
+        return Response.json({ url: res.url })
       }
-    )
-
-    let finalUrl: string | null = null
-
-    // Follow redirect chain to get actual CDN URL
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location")
-      if (location) {
-        const redirectRes = await fetch(location, {
-          redirect: "follow",
-          headers: {
-            Referer: "https://music.163.com",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-          },
-        })
-        finalUrl = redirectRes.url
-      }
-    } else if (res.ok) {
-      finalUrl = res.url
-    }
-
-    audioCache.set(cacheKey, { url: finalUrl, timestamp: Date.now() })
-    return Response.json({ url: finalUrl })
-  } catch {
-    return Response.json({ url: null })
+    } catch { /* next url */ }
   }
+
+  audioCache.set(cacheKey, { url: null, timestamp: Date.now() })
+  return Response.json({ url: null })
 }

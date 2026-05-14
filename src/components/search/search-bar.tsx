@@ -14,6 +14,7 @@ interface SearchBarProps {
   error: string | null
   noLyricsSongs?: Set<string>
   onSearchFocus?: () => void
+  forceOpen?: number
 }
 
 const SCROLLBAR_CLASSES =
@@ -28,10 +29,19 @@ export function SearchBar({
   error,
   noLyricsSongs,
   onSearchFocus,
+  forceOpen,
 }: SearchBarProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (forceOpen && forceOpen > 0) {
+      setOpen(true)
+      inputRef.current?.focus()
+    }
+  }, [forceOpen])
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -50,6 +60,7 @@ export function SearchBar({
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
+          ref={inputRef}
           placeholder="输入歌曲名、歌手名或部分歌词..."
           value={query}
           onChange={(e) => onQueryChange(e.target.value)}

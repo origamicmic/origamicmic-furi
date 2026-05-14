@@ -2,7 +2,7 @@ import { NextRequest } from "next/server"
 import { getSupabase } from "@/lib/supabase"
 
 const MAX_LENGTH = 100
-const DAILY_LIMIT = 20
+const DAILY_LIMIT = 5
 
 const ipCounters = new Map<string, { date: string; count: number }>()
 

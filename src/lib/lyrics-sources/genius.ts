@@ -60,12 +60,18 @@ export class GeniusSource implements LyricsSource {
     const htmlRes = await httpGet(`https://genius.com${path}`)
     const html = await htmlRes.text()
 
-    const match = html.match(/<div data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi)
+    // Primary pattern: data-lyrics-container="true"
+    let match = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi) 
+    // Fallback: LyricText classes
+    if (!match) match = html.match(/<div[^>]*class="[^"]*Lyrics__Container[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)
+    // Fallback: any lyrics section
+    if (!match) match = html.match(/<section[^>]*class="[^"]*lyrics[^"]*"[^>]*>([\s\S]*?)<\/section>/gi)
     if (!match) throw new Error("Could not extract lyrics from page")
 
     return match
       .map((block: string) =>
         block
+          .replace(/<br\s*\/?>/gi, "\n")
           .replace(/<[^>]+>/g, "")
           .replace(/&amp;/g, "&")
           .replace(/&lt;/g, "<")
