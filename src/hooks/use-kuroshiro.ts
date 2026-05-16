@@ -54,8 +54,8 @@ export function useKuroshiro() {
       setError(msg)
       return false
     } finally {
+      initRef.current = false
       if (mounted.current) {
-        initRef.current = false
         setInitializing(false)
       }
     }
@@ -72,7 +72,10 @@ export function useKuroshiro() {
 
   useEffect(() => {
     mounted.current = true
-    return () => { mounted.current = false }
+    return () => {
+      mounted.current = false
+      initRef.current = false
+    }
   }, [])
 
   return { isReady, error, initializing, ensureReady, retry }

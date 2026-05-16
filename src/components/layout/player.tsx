@@ -1,7 +1,7 @@
 "use client"
 
 import { useRef, useState, useEffect, useCallback } from "react"
-import { Play, Pause, AlertCircle } from "lucide-react"
+import { Play, Pause, AlertCircle, Loader2 } from "lucide-react"
 
 interface PlayerProps {
   src: string
@@ -23,53 +23,91 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const [current, setCurrent] = useState(0)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState(false)
+  const [loading, setLoading] = useState(true)
   const dragging = useRef(false)
   const seeking = useRef(false)
   const dragPos = useRef(0)
   const fallbackTried = useRef(false)
+  const stallRetries = useRef(0)
+  const playingRef = useRef(false)
+  const audioSrcRef = useRef(src)
+
+  useEffect(() => { playingRef.current = playing }, [playing])
 
   useEffect(() => {
     fallbackTried.current = false
+    stallRetries.current = 0
+    setLoading(true)
+    setError(false)
+    audioSrcRef.current = src
     const audio = audioRef.current
     if (!audio) return
+
     const onTime = () => {
       if (!dragging.current && !seeking.current) setCurrent(audio.currentTime)
     }
+    const onLoaded = () => {
+      setLoading(false)
+      setError(false)
+    }
     const onDur = () => setDuration(audio.duration || 0)
     const onEnd = () => setPlaying(false)
-    const onErr = () => setError(true)
+    const onErr = () => {
+      setLoading(false)
+      if (fallbackSrc && !fallbackTried.current) {
+        fallbackTried.current = true
+        audioSrcRef.current = fallbackSrc
+        audio.src = fallbackSrc
+        audio.load()
+        setLoading(true)
+      } else {
+        setError(true)
+      }
+    }
+    const onStalled = () => {
+      if (!playingRef.current || stallRetries.current >= 2) return
+      stallRetries.current++
+      audio.load()
+      audio.play().catch(() => {})
+    }
     const onSeeking = () => { seeking.current = true }
     const onSeeked = () => {
       seeking.current = false
       setCurrent(audio.currentTime)
     }
+
     audio.addEventListener("timeupdate", onTime)
-    audio.addEventListener("loadedmetadata", onDur)
+    audio.addEventListener("loadedmetadata", onLoaded)
+    audio.addEventListener("loadeddata", onLoaded)
     audio.addEventListener("durationchange", onDur)
     audio.addEventListener("ended", onEnd)
     audio.addEventListener("error", onErr)
+    audio.addEventListener("stalled", onStalled)
     audio.addEventListener("seeking", onSeeking)
     audio.addEventListener("seeked", onSeeked)
     return () => {
       audio.removeEventListener("timeupdate", onTime)
-      audio.removeEventListener("loadedmetadata", onDur)
+      audio.removeEventListener("loadedmetadata", onLoaded)
+      audio.removeEventListener("loadeddata", onLoaded)
       audio.removeEventListener("durationchange", onDur)
       audio.removeEventListener("ended", onEnd)
       audio.removeEventListener("error", onErr)
+      audio.removeEventListener("stalled", onStalled)
       audio.removeEventListener("seeking", onSeeking)
       audio.removeEventListener("seeked", onSeeked)
     }
-  }, [src])
+  }, [src, fallbackSrc])
 
   const toggle = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
+    if (loading) return
     if (error) {
       setError(false)
-      if (fallbackSrc && !fallbackTried.current && audio.src !== fallbackSrc) {
-        fallbackTried.current = true
-        audio.src = fallbackSrc
-      }
+      setLoading(true)
+      fallbackTried.current = false
+      stallRetries.current = 0
+      audio.src = audioSrcRef.current
       audio.load()
       audio.play().then(() => setPlaying(true)).catch(() => setError(true))
       return
@@ -78,9 +116,12 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       audio.pause()
       setPlaying(false)
     } else {
-      audio.play().then(() => setPlaying(true)).catch(() => setError(true))
+      audio.play().then(() => setPlaying(true)).catch(() => {
+        setError(true)
+        setLoading(false)
+      })
     }
-  }, [error, playing, fallbackSrc])
+  }, [loading, error, playing])
 
   const calcPosition = useCallback((clientX: number): number => {
     const bar = barRef.current
@@ -115,13 +156,15 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const progress = duration > 0 ? (current / duration) * 100 : 0
 
   return (
-    <div className="flex flex-1 items-center gap-3 rounded-full bg-white/60 px-4 py-1.5 shadow-sm ring-1 ring-white/40 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10">
-      <audio ref={audioRef} src={src} preload="auto" />
+    <div className="flex flex-1 items-center gap-3 rounded-full bg-white/60 px-4 py-1.5 shadow-sm ring-1 ring-white/40 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10 max-w-sm">
+      <audio ref={audioRef} src={src} preload="metadata" />
       <button
         onClick={toggle}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-transform hover:scale-105"
       >
-        {error ? (
+        {loading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : error ? (
           <AlertCircle className="h-3.5 w-3.5" />
         ) : playing ? (
           <Pause className="h-3.5 w-3.5" />
@@ -150,7 +193,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
             />
           </div>
           <span className="text-[10px] tabular-nums text-muted-foreground/40">
-            {error ? "暂无" : duration > 0 ? formatTime(current) : "--:--"}
+            {loading ? "--:--" : error ? "错误" : duration > 0 ? formatTime(current) : "--:--"}
           </span>
         </div>
       </div>

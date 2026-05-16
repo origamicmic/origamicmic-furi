@@ -54,10 +54,10 @@ export async function isEngineAlive(): Promise<boolean> {
   if (!kuroshiroInstance) return false
   try {
     const result = await Promise.race([
-      kuroshiroInstance.convert("あ", { to: "hiragana" }),
+      kuroshiroInstance.convert("日本語", { to: "hiragana" }),
       new Promise<null>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
     ])
-    return result === "あ"
+    return result === "にほんご" || result === "にっぽんご"
   } catch {
     return false
   }

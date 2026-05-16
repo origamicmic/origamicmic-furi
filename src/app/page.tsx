@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { Header } from "@/components/layout/header"
+import { Player } from "@/components/layout/player"
 import { ModeSelector } from "@/components/search/mode-selector"
 import { SearchBar } from "@/components/search/search-bar"
 import { PasteInput } from "@/components/search/paste-input"
@@ -191,8 +192,8 @@ export default function Home() {
           } catch {}
         }
         if (neteaseId) {
-          setAudioUrl(`https://music.163.com/song/media/outer/url?id=${neteaseId}`)
-          setAudioFallbackUrl(`/api/audio?id=${neteaseId}`)
+          setAudioUrl(`/api/audio?id=${neteaseId}`)
+          setAudioFallbackUrl(`https://music.163.com/song/media/outer/url?id=${neteaseId}`)
           setAudioTitle(song.title)
           setAudioArtist(song.artist)
         }
@@ -210,7 +211,7 @@ export default function Home() {
 
   return (
       <div className="flex min-h-full flex-col bg-background">
-      <Header onHomeClick={handleReset} audioUrl={audioUrl} audioFallbackUrl={audioFallbackUrl} audioTitle={audioTitle} audioArtist={audioArtist} />
+      <Header onHomeClick={handleReset} audioUrl={audioUrl} audioFallbackUrl={audioFallbackUrl} audioTitle={audioTitle} audioArtist={audioArtist} hidePlayer={isNarrow && hasLyrics} />
 
       {showBackTop && (
         <button
@@ -236,7 +237,7 @@ export default function Home() {
             {kuroshiroError && (
               <div className="w-full rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 解析引擎加载失败，请重试
-                <button onClick={retry} className="ml-2 underline hover:no-underline">重试</button>
+                <button onClick={() => { retry(); lastLyricsRef.current = "" }} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
 
@@ -264,6 +265,11 @@ export default function Home() {
             "flex w-full flex-1 flex-col gap-3 overflow-hidden p-4 sm:p-6",
             editingEnabled && !isNarrow ? "" : "mx-auto max-w-6xl"
           )}>
+            {isNarrow && audioUrl && (
+              <div className="flex justify-center">
+                <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
+              </div>
+            )}
             <div className={`flex items-center justify-between rounded-2xl px-5 py-2 ${FROSTED}`}>
               <span className="text-xs text-muted-foreground/50">{lines.length}行 · {data.source}</span>
               <div className="flex items-center gap-2">
