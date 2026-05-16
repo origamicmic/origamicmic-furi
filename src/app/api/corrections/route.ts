@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
       .limit(50)
 
     if (error) {
-      console.error("Supabase query error:", error)
+      console.error("Supabase query error:", error.message ?? error)
       return Response.json({ corrections: [] })
     }
 
@@ -48,6 +48,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (!(request.headers.get("content-type") || "").includes("application/json")) {
+      return Response.json({ error: "不支持的媒体类型" }, { status: 415 })
+    }
+
     const text = await request.text()
     if (text.length > 5000) {
       return Response.json({ error: "请求体过大" }, { status: 413 })
@@ -82,7 +86,7 @@ export async function POST(request: NextRequest) {
       .select()
 
     if (error) {
-      console.error("Supabase insert error:", error)
+      console.error("Supabase insert error:", error.message ?? error)
       return Response.json(
         { error: "提交失败，请稍后重试" },
         { status: 500 }
@@ -91,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     return Response.json({ correction: data?.[0] })
   } catch (e) {
-    console.error("Correction POST error:", e)
+    console.error("Correction POST error:", e instanceof Error ? e.message : String(e))
     return Response.json({ error: "提交失败" }, { status: 500 })
   }
 }

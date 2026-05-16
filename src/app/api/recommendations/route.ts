@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       .limit(20)
 
     if (error) {
-      console.error("Supabase query error:", error)
+      console.error("Supabase query error:", error.message ?? error)
       return Response.json({ recommendations: [] })
     }
 
@@ -97,6 +97,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (!(request.headers.get("content-type") || "").includes("application/json")) {
+      return Response.json({ error: "不支持的媒体类型" }, { status: 415 })
+    }
+
     const text = await request.text()
     cleanExpiredCounters()
     if (text.length > 2000) {
@@ -134,7 +138,7 @@ export async function POST(request: NextRequest) {
       .select()
 
     if (error) {
-      console.error("Supabase insert error:", error)
+      console.error("Supabase insert error:", error.message ?? error)
       return Response.json({ error: "提交失败" }, { status: 500 })
     }
 

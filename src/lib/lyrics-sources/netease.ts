@@ -39,7 +39,7 @@ export class NeteaseSource implements LyricsSource {
   async fetchLyrics(songId: string): Promise<string> {
     // Try primary lyrics endpoint
     const res = await fetch(
-      `${NETEASE_API}/song/lyric?id=${songId}&lv=1&kv=1&tv=-1`,
+      `${NETEASE_API}/song/lyric?id=${encodeURIComponent(songId)}&lv=1&kv=1&tv=-1`,
       { headers: BROWSER_HEADERS }
     )
 

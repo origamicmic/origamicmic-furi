@@ -42,6 +42,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    if (!(request.headers.get("content-type") || "").includes("application/json")) {
+      return Response.json({ error: "不支持的媒体类型" }, { status: 415 })
+    }
+
     const text = await request.text()
     cleanExpiredCounters()
     if (text.length > 1000) return Response.json({ error: "请求体过大" }, { status: 413 })
@@ -77,7 +81,7 @@ export async function POST(request: NextRequest) {
       .eq("id", recommendation_id)
 
     if (updateErr) {
-      console.error("Vote update error:", updateErr)
+      console.error("Vote update error:", updateErr.message ?? updateErr)
       return Response.json({ error: "投票失败" }, { status: 500 })
     }
 

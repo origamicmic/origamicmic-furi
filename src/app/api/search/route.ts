@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     cache.set(cacheKey, { songs, timestamp: Date.now() })
     return Response.json({ songs })
   } catch (error) {
-    console.error("Search error:", error)
+    console.error("Search error:", error instanceof Error ? error.message : String(error))
     return Response.json(
       { error: "搜索失败，请稍后重试", songs: [] },
       { status: 500 }

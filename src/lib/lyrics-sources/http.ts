@@ -12,6 +12,16 @@ function decompress(buffer: Buffer, encoding: string): Buffer {
   return buffer
 }
 
+function sameApexDomain(urlA: string, urlB: string): boolean {
+  try {
+    const a = new URL(urlA).hostname.split(".").slice(-2).join(".")
+    const b = new URL(urlB).hostname.split(".").slice(-2).join(".")
+    return a === b
+  } catch {
+    return false
+  }
+}
+
 function doRequest(
   url: string,
   headers?: Record<string, string>,
@@ -39,6 +49,10 @@ function doRequest(
           const location = res.headers.location
           if (location) {
             const target = location.startsWith("http") ? location : new URL(location, url).href
+            if (!sameApexDomain(url, target)) {
+              reject(new Error("Redirect to external host blocked"))
+              return
+            }
             resolve(doRequest(target, headers, timeoutMs, redirectCount + 1))
             return
           }

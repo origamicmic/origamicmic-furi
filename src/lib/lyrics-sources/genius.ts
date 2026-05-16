@@ -41,7 +41,7 @@ export class GeniusSource implements LyricsSource {
   }
 
   async fetchLyrics(songId: string): Promise<string> {
-    const dataUrl = `${GENIUS_API}/songs/${songId}`
+    const dataUrl = `${GENIUS_API}/songs/${encodeURIComponent(songId)}`
     const res = await httpGet(dataUrl, {
       Authorization: `Bearer ${this.token}`,
     }, 20000)
@@ -56,7 +56,7 @@ export class GeniusSource implements LyricsSource {
 
     const song = data.response?.song
     const pagePath = song?.path || song?.url
-    if (!pagePath) throw new Error("No lyrics path found")
+    if (!pagePath || typeof pagePath !== "string" || !/^\//.test(pagePath)) throw new Error("No lyrics path found")
 
     const htmlRes = await httpGet(`https://genius.com${pagePath}`, {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

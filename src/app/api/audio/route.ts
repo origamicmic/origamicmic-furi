@@ -3,7 +3,7 @@ import { NextRequest } from "next/server"
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get("id")
-  if (!id) return new Response(null, { status: 400 })
+  if (!id || !/^\d+$/.test(id)) return new Response(null, { status: 400 })
 
   const upstreamHeaders: Record<string, string> = {
     "Referer": "https://music.163.com",
@@ -45,7 +45,6 @@ export async function GET(request: NextRequest) {
         headers: {
           Location: finalUrl,
           "Cache-Control": "no-cache",
-          "Access-Control-Allow-Origin": "*",
         },
       })
     } catch {}
@@ -54,10 +53,13 @@ export async function GET(request: NextRequest) {
   return new Response(null, { status: 404 })
 }
 
-export async function OPTIONS() {
+export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get("origin") || ""
+  const host = request.headers.get("host") || ""
+  const allowed = origin && (origin.includes(host) || origin.endsWith(".vercel.app"))
   return new Response(null, {
     headers: {
-      "Access-Control-Allow-Origin": "*",
+      ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),
       "Access-Control-Allow-Methods": "GET, OPTIONS",
       "Access-Control-Allow-Headers": "Range",
       "Access-Control-Max-Age": "86400",
