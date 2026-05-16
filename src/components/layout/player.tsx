@@ -7,6 +7,7 @@ interface PlayerProps {
   src: string
   title: string
   artist: string
+  fallbackSrc?: string
 }
 
 function formatTime(seconds: number): string {
@@ -15,7 +16,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
-export function Player({ src, title, artist }: PlayerProps) {
+export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -25,8 +26,10 @@ export function Player({ src, title, artist }: PlayerProps) {
   const dragging = useRef(false)
   const seeking = useRef(false)
   const dragPos = useRef(0)
+  const fallbackTried = useRef(false)
 
   useEffect(() => {
+    fallbackTried.current = false
     const audio = audioRef.current
     if (!audio) return
     const onTime = () => {
@@ -63,6 +66,10 @@ export function Player({ src, title, artist }: PlayerProps) {
     if (!audio) return
     if (error) {
       setError(false)
+      if (fallbackSrc && !fallbackTried.current && audio.src !== fallbackSrc) {
+        fallbackTried.current = true
+        audio.src = fallbackSrc
+      }
       audio.load()
       audio.play().then(() => setPlaying(true)).catch(() => setError(true))
       return
@@ -73,7 +80,7 @@ export function Player({ src, title, artist }: PlayerProps) {
     } else {
       audio.play().then(() => setPlaying(true)).catch(() => setError(true))
     }
-  }, [error, playing])
+  }, [error, playing, fallbackSrc])
 
   const calcPosition = useCallback((clientX: number): number => {
     const bar = barRef.current

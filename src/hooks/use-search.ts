@@ -30,6 +30,7 @@ export function useSearch() {
 
     const queryKey = q.trim()
     latestQueryRef.current = queryKey
+    setResults([])
     setIsSearching(true)
     setError(null)
 

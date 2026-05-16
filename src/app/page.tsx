@@ -59,6 +59,7 @@ export default function Home() {
   const [editingEnabled, setEditingEnabled] = useState(false)
   const [selectedEditWord, setSelectedEditWord] = useState<{ surface: string; reading: string; lineIndex: number; tokenId: string } | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioFallbackUrl, setAudioFallbackUrl] = useState<string | null>(null)
   const [audioTitle, setAudioTitle] = useState("")
   const [audioArtist, setAudioArtist] = useState("")
   const [searchFocused, setSearchFocused] = useState(false)
@@ -150,6 +151,7 @@ export default function Home() {
     setEditingEnabled(false)
     setSelectedEditWord(null)
     setAudioUrl(null)
+    setAudioFallbackUrl(null)
     setAudioTitle("")
     setAudioArtist("")
   }
@@ -189,7 +191,8 @@ export default function Home() {
           } catch {}
         }
         if (neteaseId) {
-          setAudioUrl(`/api/audio?id=${neteaseId}`)
+          setAudioUrl(`https://music.163.com/song/media/outer/url?id=${neteaseId}`)
+          setAudioFallbackUrl(`/api/audio?id=${neteaseId}`)
           setAudioTitle(song.title)
           setAudioArtist(song.artist)
         }
@@ -203,11 +206,11 @@ export default function Home() {
     updateToken(selectedEditWord.lineIndex, selectedEditWord.tokenId, reading)
   }
 
-  const hasLyrics = lines.length > 0
+  const hasLyrics = lines.length > 0 || search.lyricsText !== null
 
   return (
       <div className="flex min-h-full flex-col bg-background">
-      <Header onHomeClick={handleReset} audioUrl={audioUrl} audioTitle={audioTitle} audioArtist={audioArtist} />
+      <Header onHomeClick={handleReset} audioUrl={audioUrl} audioFallbackUrl={audioFallbackUrl} audioTitle={audioTitle} audioArtist={audioArtist} />
 
       {showBackTop && (
         <button

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
         redirects++
       }
 
-      const finalUrl = current.url
+      const finalUrl = current.url.replace(/^http:\/\//, "https://")
       const ct = (current.headers.get("content-type") || "").toLowerCase()
       const isAudio = ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")
 

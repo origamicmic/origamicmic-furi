@@ -10,9 +10,10 @@ interface HeaderProps {
   audioUrl?: string | null
   audioTitle?: string
   audioArtist?: string
+  audioFallbackUrl?: string | null
 }
 
-export function Header({ onHomeClick, audioUrl, audioTitle, audioArtist }: HeaderProps) {
+export function Header({ onHomeClick, audioUrl, audioTitle, audioArtist, audioFallbackUrl }: HeaderProps) {
   const { theme, setTheme } = useTheme()
 
   return (
@@ -39,7 +40,7 @@ export function Header({ onHomeClick, audioUrl, audioTitle, audioArtist }: Heade
 
         {audioUrl && audioTitle && (
           <div className="absolute left-1/2 -translate-x-1/2">
-            <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} />
+            <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
           </div>
         )}
 

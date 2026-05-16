@@ -96,7 +96,7 @@ export function SearchBar({
               {error || "未找到相关歌曲"}
             </div>
           )}
-          {results.length > 0 && (
+          {!isSearching && results.length > 0 && (
             <div className={`max-h-[260px] overflow-y-auto ${SCROLLBAR_CLASSES}`} role="listbox">
               {results.map((song, i) => {
                 const key = `${song.source}-${song.id}`
