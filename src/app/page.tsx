@@ -22,6 +22,28 @@ const BTN_BASE = "rounded-lg px-3 py-1.5 text-xs font-medium tracking-wider tran
 const BTN_ON = "bg-primary text-primary-foreground shadow-sm hover:bg-primary/80"
 const BTN_OFF = "border border-border/60 text-muted-foreground hover:border-primary/30 hover:text-foreground"
 
+const KANA_KANJI_RE = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff\u3400-\u4dbf]+/g
+
+function extractJapaneseTitle(title: string): string {
+  const blocks = title.match(KANA_KANJI_RE) ?? []
+  return blocks.join(" ")
+}
+
+function cleanForMatch(s: string): string {
+  return s
+    .replace(/\(.*?\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
+function hasSubstringMatch(a: string, b: string): boolean {
+  const ca = cleanForMatch(a)
+  const cb = cleanForMatch(b)
+  if (!ca || !cb) return false
+  return ca.length >= 3 && cb.length >= 3 && (ca.includes(cb) || cb.includes(ca))
+}
+
 export default function Home() {
   const { error: kuroshiroError, ensureReady, retry } = useKuroshiro()
   const { lines, setLines, isConverting, convert, updateToken, resetGeneration } = useConvert(ensureReady)
@@ -150,12 +172,18 @@ export default function Home() {
       try {
         let neteaseId = song.source === "netease" ? song.id : null
         if (!neteaseId) {
+          // Build a clean search query from Japanese characters in title + artist.
+          // Genius titles can be long like "JPN (EN) - ARTIST (Romanized)",
+          // so we extract only the kana/kanji blocks for Netease matching.
+          const jpTitle = extractJapaneseTitle(song.title) || song.title
+          const jpArtist = extractJapaneseTitle(song.artist) || song.artist
+          const searchQuery = [jpTitle, jpArtist].filter(Boolean).join(" ")
           try {
-            const r = await fetch(`/api/search?q=${encodeURIComponent(`${song.title} ${song.artist}`)}`)
+            const r = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`)
             const d = await r.json()
             const match = (d.songs ?? []).find((s: { source: string; title: string }) =>
               s.source === "netease" &&
-              s.title.toLowerCase().includes(song.title.toLowerCase().slice(0, 10))
+              (hasSubstringMatch(s.title, song.title) || hasSubstringMatch(s.title, jpTitle))
             )
             if (match) neteaseId = match.id
           } catch {}

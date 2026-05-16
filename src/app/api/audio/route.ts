@@ -10,42 +10,43 @@ export async function GET(request: NextRequest) {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   }
 
-  // Forward client Range header so upstream returns 206 Partial Content
-  const clientRange = request.headers.get("range")
-  if (clientRange) upstreamHeaders["Range"] = clientRange
-
   for (const suffix of ["", ".mp3"]) {
     try {
       const url = `https://music.163.com/song/media/outer/url?id=${id}${suffix}`
       const res = await fetch(url, {
-        redirect: "follow",
+        redirect: "manual",
         headers: upstreamHeaders,
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(8000),
       })
 
-      const ct = (res.headers.get("content-type") || "").toLowerCase()
-      const isAudio = ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")
-
-      if (!res.ok || !res.body || !isAudio) continue
-
-      const proxiedHeaders: Record<string, string> = {
-        "Content-Type": "audio/mpeg",
-        "Accept-Ranges": "bytes",
-        "Cache-Control": "public, max-age=1800",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Range",
-        "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
+      // Follow redirects manually to capture the final CDN URL
+      let current = res
+      let redirects = 0
+      while ([301, 302, 303, 307, 308].includes(current.status) && redirects < 5) {
+        const location = current.headers.get("location")
+        if (!location) break
+        current = await fetch(location, {
+          redirect: "manual",
+          headers: upstreamHeaders,
+          signal: AbortSignal.timeout(8000),
+        })
+        redirects++
       }
 
-      // Forward upstream length / range headers for duration + seeking
-      const cl = res.headers.get("content-length")
-      if (cl) proxiedHeaders["Content-Length"] = cl
-      const cr = res.headers.get("content-range")
-      if (cr) proxiedHeaders["Content-Range"] = cr
+      const finalUrl = current.url
+      const ct = (current.headers.get("content-type") || "").toLowerCase()
+      const isAudio = ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")
 
-      return new Response(res.body, {
-        status: res.status,  // pass through 206 / 200
-        headers: proxiedHeaders,
+      if (!isAudio) continue
+
+      // Redirect client to the CDN URL so the <audio> element streams directly
+      return new Response(null, {
+        status: 302,
+        headers: {
+          Location: finalUrl,
+          "Cache-Control": "no-cache",
+          "Access-Control-Allow-Origin": "*",
+        },
       })
     } catch {}
   }
@@ -53,7 +54,6 @@ export async function GET(request: NextRequest) {
   return new Response(null, { status: 404 })
 }
 
-// Handle CORS preflight for Range requests
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
