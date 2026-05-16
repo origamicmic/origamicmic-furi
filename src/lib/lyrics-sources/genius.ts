@@ -59,58 +59,106 @@ export class GeniusSource implements LyricsSource {
     if (!pagePath) throw new Error("No lyrics path found")
 
     const htmlRes = await httpGet(`https://genius.com${pagePath}`, {
-      Authorization: `Bearer ${this.token}`,
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     })
     const html = await htmlRes.text()
 
-    // Primary: data-lyrics-container
-    let match = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi)
-    // Fallback: Lyrics__Container class (Genius v2023+)
-    if (!match) match = html.match(/<div[^>]*class="[^"]*Lyrics__Container[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)
-    // Fallback: section with lyrics class
-    if (!match) match = html.match(/<section[^>]*class="[^"]*lyrics[^"]*"[^>]*>([\s\S]*?)<\/section>/gi)
-    // Fallback: extract text from pre/lyrics content blocks
-    if (!match) match = html.match(/<div[^>]*(?:data-lyrics|lyrics)[^>]*>([\s\S]*?)<\/div>/gi)
-    let lyricsText = ""
-    if (match) {
-      lyricsText = match
-        .map((block: string) =>
-          block
-            .replace(/<br\s*\/?>/gi, "\n")
-            .replace(/<[^>]+>/g, "")
-            .replace(/&amp;/g, "&")
-            .replace(/&lt;/g, "<")
-            .replace(/&gt;/g, ">")
-            .replace(/&quot;/g, '"')
-            .replace(/&#x27;/g, "'")
-            .trim()
-        )
-        .join("\n")
-    } else {
-      // Fallback: extract from __NEXT_DATA__ JSON (Genius React SSR)
-      const jsonMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(\{[\s\S]*?\})<\/script>/i)
-      if (jsonMatch) {
-        try {
-          const nextData = JSON.parse(jsonMatch[1])
-          const children: unknown[] = nextData?.props?.pageProps?.songPage?.lyricsData?.body?.children
-          if (Array.isArray(children)) {
-            const lines: string[] = []
-            for (const child of children) {
-              if (typeof child === "string") { lines.push(child); continue }
-              if (child && typeof child === "object" && Array.isArray((child as Record<string, unknown>).children)) {
-                for (const c of (child as Record<string, unknown[]>).children) {
-                  if (typeof c === "string") lines.push(c)
-                }
-              }
-            }
-            lyricsText = lines.join("\n")
-          }
-        } catch { /* JSON parse failed */ }
-      }
-    }
+    const lyricsText = extractLyricsFromHtml(html)
     if (!lyricsText.trim()) throw new Error("Could not extract lyrics from page")
 
     return lyricsText.replace(/\n{3,}/g, "\n\n")
   }
+}
+
+function extractLyricsFromHtml(html: string): string {
+  // Strategy 1: data-lyrics-container divs (Genius leaf nodes — most reliable)
+  const containerMatch = html.match(/<div[^>]*data-lyrics-container="true"[^>]*>([\s\S]*?)<\/div>/gi)
+  if (containerMatch) {
+    return containerMatch
+      .map(cleanHtmlBlock)
+      .join("\n")
+  }
+
+  // Strategy 2: Lyrics__Container class (Genius v2023+)
+  const lyricClassMatch = html.match(/<div[^>]*class="[^"]*Lyrics__Container[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)
+  if (lyricClassMatch) {
+    return lyricClassMatch
+      .map(cleanHtmlBlock)
+      .join("\n")
+  }
+
+  // Strategy 3: section/div with lyrics class
+  const sectionMatch = html.match(/<(?:section|div)[^>]*class="[^"]*lyrics[^"]*"[^>]*>([\s\S]*?)<\/(?:section|div)>/gi)
+  if (sectionMatch) {
+    return sectionMatch
+      .map(cleanHtmlBlock)
+      .join("\n")
+  }
+
+  // Strategy 4: __NEXT_DATA__ JSON with recursive search
+  const jsonMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(\{[\s\S]*?\})<\/script>/i)
+  if (jsonMatch) {
+    try {
+      const nextData = JSON.parse(jsonMatch[1])
+      const lyricsResult = findLyricsInNextData(nextData)
+      if (lyricsResult) return lyricsResult
+    } catch { /* JSON parse failed */ }
+  }
+
+  return ""
+}
+
+function cleanHtmlBlock(block: string): string {
+  return block
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)))
+    .trim()
+}
+
+function findLyricsInNextData(obj: unknown, depth = 0): string | null {
+  if (depth > 12 || !obj || typeof obj !== "object") return null
+
+  // Direct match: array with string children (Genius lyrics tree)
+  if (Array.isArray(obj)) {
+    const hasStrings = obj.some(item => typeof item === "string")
+    if (hasStrings) {
+      const lines: string[] = []
+      for (const item of obj) {
+        if (typeof item === "string") {
+          lines.push(item)
+        } else if (item && typeof item === "object") {
+          const nested = findLyricsInNextData(item, depth + 1)
+          if (nested) return nested
+        }
+      }
+      if (lines.length > 0) return lines.join("\n")
+    }
+    return null
+  }
+
+  // Check "children" key first (standard Genius structure)
+  const record = obj as Record<string, unknown>
+  if (record.children !== undefined) {
+    const childResult = findLyricsInNextData(record.children, depth + 1)
+    if (childResult) return childResult
+  }
+
+  // Recursively search all properties for lyrics-like data
+  for (const key of Object.keys(record)) {
+    if (key === "children") continue
+    const val = record[key]
+    if (val && typeof val === "object") {
+      const result = findLyricsInNextData(val, depth + 1)
+      if (result) return result
+    }
+  }
+
+  return null
 }

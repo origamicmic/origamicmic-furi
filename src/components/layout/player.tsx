@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useEffect } from "react"
+import { useRef, useState, useEffect, useCallback } from "react"
 import { Play, Pause, AlertCircle } from "lucide-react"
 
 interface PlayerProps {
@@ -22,70 +22,88 @@ export function Player({ src, title, artist }: PlayerProps) {
   const [current, setCurrent] = useState(0)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState(false)
-  const [dragging, setDragging] = useState(false)
+  const dragging = useRef(false)
+  const seeking = useRef(false)
   const dragPos = useRef(0)
 
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
-    const onTime = () => { if (!dragging) setCurrent(audio.currentTime) }
+    const onTime = () => {
+      if (!dragging.current && !seeking.current) setCurrent(audio.currentTime)
+    }
     const onDur = () => setDuration(audio.duration || 0)
     const onEnd = () => setPlaying(false)
     const onErr = () => setError(true)
+    const onSeeking = () => { seeking.current = true }
+    const onSeeked = () => {
+      seeking.current = false
+      setCurrent(audio.currentTime)
+    }
     audio.addEventListener("timeupdate", onTime)
     audio.addEventListener("loadedmetadata", onDur)
+    audio.addEventListener("durationchange", onDur)
     audio.addEventListener("ended", onEnd)
     audio.addEventListener("error", onErr)
+    audio.addEventListener("seeking", onSeeking)
+    audio.addEventListener("seeked", onSeeked)
     return () => {
       audio.removeEventListener("timeupdate", onTime)
       audio.removeEventListener("loadedmetadata", onDur)
+      audio.removeEventListener("durationchange", onDur)
       audio.removeEventListener("ended", onEnd)
       audio.removeEventListener("error", onErr)
+      audio.removeEventListener("seeking", onSeeking)
+      audio.removeEventListener("seeked", onSeeked)
     }
-  }, [src, dragging])
+  }, [src])
 
-  const toggle = () => {
+  const toggle = useCallback(() => {
     const audio = audioRef.current
-    if (!audio || error) return
-    if (playing) audio.pause()
-    else audio.play().catch(() => setError(true))
-    setPlaying(!playing)
-  }
+    if (!audio) return
+    if (error) {
+      setError(false)
+      audio.load()
+      audio.play().then(() => setPlaying(true)).catch(() => setError(true))
+      return
+    }
+    if (playing) {
+      audio.pause()
+      setPlaying(false)
+    } else {
+      audio.play().then(() => setPlaying(true)).catch(() => setError(true))
+    }
+  }, [error, playing])
 
-  const calcPosition = (clientX: number): number => {
+  const calcPosition = useCallback((clientX: number): number => {
     const bar = barRef.current
     if (!bar) return 0
     const rect = bar.getBoundingClientRect()
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
     return pct * (duration || 1)
-  }
+  }, [duration])
 
   const onPointerDown = (e: React.PointerEvent) => {
-    setDragging(true)
+    dragging.current = true
     dragPos.current = calcPosition(e.clientX)
     setCurrent(dragPos.current)
-  }
 
-  useEffect(() => {
-    if (!dragging) return
     const onMove = (e: PointerEvent) => {
       dragPos.current = calcPosition(e.clientX)
       setCurrent(dragPos.current)
     }
     const onUp = () => {
-      setDragging(false)
+      dragging.current = false
       const audio = audioRef.current
       if (audio && dragPos.current > 0) {
         audio.currentTime = dragPos.current
       }
-    }
-    window.addEventListener("pointermove", onMove)
-    window.addEventListener("pointerup", onUp)
-    return () => {
       window.removeEventListener("pointermove", onMove)
       window.removeEventListener("pointerup", onUp)
     }
-  }, [dragging])
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", onUp)
+  }
 
   const progress = duration > 0 ? (current / duration) * 100 : 0
 
@@ -94,8 +112,7 @@ export function Player({ src, title, artist }: PlayerProps) {
       <audio ref={audioRef} src={src} preload="auto" />
       <button
         onClick={toggle}
-        disabled={error}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-transform hover:scale-105 disabled:opacity-50"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-transform hover:scale-105"
       >
         {error ? (
           <AlertCircle className="h-3.5 w-3.5" />
@@ -126,7 +143,7 @@ export function Player({ src, title, artist }: PlayerProps) {
             />
           </div>
           <span className="text-[10px] tabular-nums text-muted-foreground/40">
-            {error ? "暂无" : formatTime(current)}
+            {error ? "暂无" : duration > 0 ? formatTime(current) : "--:--"}
           </span>
         </div>
       </div>

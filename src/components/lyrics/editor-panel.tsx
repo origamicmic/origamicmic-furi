@@ -24,7 +24,7 @@ interface EditorPanelProps {
   artist?: string
   editingEnabled?: boolean
   highlightEnabled?: boolean
-  onWordSelect?: (word: { surface: string; reading: string }) => void
+  onWordSelect?: (word: { surface: string; reading: string; lineIndex: number; tokenId: string }) => void
 }
 
 export function EditorPanel({
@@ -112,9 +112,9 @@ export function EditorPanel({
               <span className="mt-0.5 min-w-[2rem] shrink-0 text-right text-xs text-muted-foreground/40">
                 {line.index + 1}
               </span>
-              <span className="flex flex-wrap">
-                {line.tokens.map((token) => (
-                  <span key={token.tokenId} className="mr-1 last:mr-0">
+              <span>
+                {line.tokens.map((token, i, arr) => (
+                  <span key={`${token.tokenId}-${token.reading}-${token.userReading ?? ""}`}>
                     {editingEnabled ? (
                       <WordEditor
                         token={token}
@@ -123,7 +123,7 @@ export function EditorPanel({
                         }
                         onSubmitCorrection={() => submitCorrection(token, line.index)}
                         highlightEnabled={highlightEnabled}
-                        onWordSelect={onWordSelect ? () => onWordSelect({ surface: token.surface, reading: token.userReading || token.reading }) : undefined}
+                        onWordSelect={onWordSelect ? () => onWordSelect({ surface: token.surface, reading: token.userReading || token.reading, lineIndex: line.index, tokenId: token.tokenId }) : undefined}
                       />
                     ) : (
                       <span
@@ -135,6 +135,7 @@ export function EditorPanel({
                         {token.userReading || token.reading}
                       </span>
                     )}
+                    {i < arr.length - 1 ? " " : null}
                   </span>
                 ))}
               </span>

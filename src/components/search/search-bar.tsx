@@ -2,6 +2,7 @@
 
 import { Search, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { AsciiLoader } from "@/components/ascii-loader"
 import type { SongResult } from "@/types"
 import { useRef, useEffect, useState } from "react"
 
@@ -78,11 +79,16 @@ export function SearchBar({
       </div>
 
       {show && (
-        <div className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-border/80 bg-card shadow-xl">
+        <div className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-border/80 bg-card shadow-xl" style={{ maxHeight: "calc(100vh - 14rem)" }}>
           {isSearching && (
-            <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              搜索中...
+            <div className="flex h-full flex-col">
+              <div className="flex shrink-0 items-center justify-center py-1.5 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                搜索中...
+              </div>
+              <div className="flex flex-1 items-center justify-center overflow-hidden">
+                <AsciiLoader />
+              </div>
             </div>
           )}
           {!isSearching && results.length === 0 && query.length > 0 && (

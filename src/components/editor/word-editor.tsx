@@ -35,12 +35,6 @@ export function WordEditor({
     }
   }, [isEditing])
 
-  useEffect(() => {
-    if (!isEditing) {
-      setEditValue(token.userReading || token.reading)
-    }
-  }, [token.userReading, token.reading, isEditing])
-
   const displayText = token.userReading || token.reading
 
   const handleClick = () => {

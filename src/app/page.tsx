@@ -9,7 +9,7 @@ import { LyricsPanel } from "@/components/lyrics/lyrics-panel"
 import { EditorPanel } from "@/components/lyrics/editor-panel"
 import { EditPanel } from "@/components/editor/edit-panel"
 import { ExportButton } from "@/components/export/export-button"
-import { useKuroshiro, useConvert } from "@/hooks/use-kuroshiro"
+import { useKuroshiro, useConvert, forceKuroshiroReset } from "@/hooks/use-kuroshiro"
 import { useSearch } from "@/hooks/use-search"
 import { useCorrections } from "@/hooks/use-corrections"
 import type { InputMode, ConvertMode } from "@/types"
@@ -23,8 +23,8 @@ const BTN_ON = "bg-primary text-primary-foreground shadow-sm hover:bg-primary/80
 const BTN_OFF = "border border-border/60 text-muted-foreground hover:border-primary/30 hover:text-foreground"
 
 export default function Home() {
-  const { isReady: kuroshiroReady, error: kuroshiroError } = useKuroshiro()
-  const { lines, setLines, isConverting, convert, updateToken } = useConvert()
+  const { error: kuroshiroError, ensureReady, retry } = useKuroshiro()
+  const { lines, setLines, isConverting, convert, updateToken, resetGeneration } = useConvert(ensureReady)
   const search = useSearch()
   const { corrections, loadCorrections, submitCorrection } = useCorrections()
   const [showBackTop, setShowBackTop] = useState(false)
@@ -35,11 +35,10 @@ export default function Home() {
   const [convertMode, setConvertMode] = useState<ConvertMode>("hiragana")
   const [highlightEnabled, setHighlightEnabled] = useState(true)
   const [editingEnabled, setEditingEnabled] = useState(false)
-  const [selectedEditWord, setSelectedEditWord] = useState<{ surface: string; reading: string } | null>(null)
+  const [selectedEditWord, setSelectedEditWord] = useState<{ surface: string; reading: string; lineIndex: number; tokenId: string } | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [audioTitle, setAudioTitle] = useState("")
   const [audioArtist, setAudioArtist] = useState("")
-  const [showSearchHint, setShowSearchHint] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
   const [noLyricsSongs, setNoLyricsSongs] = useState<Set<string>>(new Set())
   const [forceOpenSearch, setForceOpenSearch] = useState(0)
@@ -57,21 +56,39 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
-    if (showSearchHint) return
-    if (!searchFocused && search.query.length === 0) return
-    if (inputMode !== "search") return
-    if (search.isSearching) return
-    if (search.results.length > 0) return
-    const id = setTimeout(() => setShowSearchHint(true), 8000)
-    return () => clearTimeout(id)
-  }, [inputMode, search.isSearching, search.results.length, searchFocused, search.query, showSearchHint])
-
-  useEffect(() => {
     const onScroll = () => setShowBackTop(window.scrollY > 300)
     window.addEventListener("scroll", onScroll, { passive: true })
     onScroll()
     return () => window.removeEventListener("scroll", onScroll)
   }, [])
+
+  useEffect(() => {
+    let hiddenTime = 0
+
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) window.location.reload()
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenTime = Date.now()
+      } else if (document.visibilityState === "visible" && hiddenTime > 0) {
+        if (Date.now() - hiddenTime > 30000) {
+          forceKuroshiroReset()
+          retry()
+          loadCorrections()
+        }
+        hiddenTime = 0
+      }
+    }
+
+    window.addEventListener("pageshow", onPageShow)
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      window.removeEventListener("pageshow", onPageShow)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
+  }, [retry, loadCorrections])
 
   const data = useMemo(
     () => ({
@@ -86,13 +103,13 @@ export default function Home() {
   useEffect(() => { loadCorrections() }, [loadCorrections])
 
   useEffect(() => {
-    if (!search.lyricsText || !kuroshiroReady) return
+    if (!search.lyricsText) return
     const text = search.lyricsText
     if (lastLyricsRef.current === text && lastModeRef.current === convertMode) return
     lastLyricsRef.current = text
     lastModeRef.current = convertMode
     convert(text, convertMode, corrections)
-  }, [search.lyricsText, kuroshiroReady, convertMode, corrections, convert])
+  }, [search.lyricsText, convertMode, corrections, convert])
 
   const handleSubmitCorrection = useCallback(
     async (c: { word: string; default_reading: string; user_reading: string; song_title?: string; artist?: string }) =>
@@ -101,11 +118,13 @@ export default function Home() {
   )
 
   const handleReset = () => {
+    resetGeneration()
     setLines([])
     lastLyricsRef.current = ""
     search.setResults([])
     search.setLyricData(null)
     search.setLyricsText(null)
+    search.setError(null)
     setEditingEnabled(false)
     setSelectedEditWord(null)
     setAudioUrl(null)
@@ -131,23 +150,18 @@ export default function Home() {
       try {
         let neteaseId = song.source === "netease" ? song.id : null
         if (!neteaseId) {
-          const queries = [`${song.title} ${song.artist}`, song.title.slice(0, 25), song.artist.slice(0, 25)]
-          for (const q of queries) {
-            if (neteaseId) break
-            try {
-              const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`)
-              const d = await r.json()
-              const match = (d.songs ?? []).find((s: { source: string; title: string; artist: string }) =>
-                s.source === "netease" &&
-                (s.title.toLowerCase().includes(song.title.toLowerCase().slice(0, 5)) ||
-                 s.artist.toLowerCase().includes(song.artist.toLowerCase().slice(0, 5)))
-              )
-              if (match) neteaseId = match.id
-            } catch {}
-          }
+          try {
+            const r = await fetch(`/api/search?q=${encodeURIComponent(`${song.title} ${song.artist}`)}`)
+            const d = await r.json()
+            const match = (d.songs ?? []).find((s: { source: string; title: string }) =>
+              s.source === "netease" &&
+              s.title.toLowerCase().includes(song.title.toLowerCase().slice(0, 10))
+            )
+            if (match) neteaseId = match.id
+          } catch {}
         }
         if (neteaseId) {
-          setAudioUrl(`/api/audio?source=netease&id=${neteaseId}`)
+          setAudioUrl(`/api/audio?id=${neteaseId}`)
           setAudioTitle(song.title)
           setAudioArtist(song.artist)
         }
@@ -157,13 +171,14 @@ export default function Home() {
   )
 
   const handleApplyEditReading = (reading: string) => {
-    if (selectedEditWord) setSelectedEditWord(null)
+    if (!selectedEditWord) return
+    updateToken(selectedEditWord.lineIndex, selectedEditWord.tokenId, reading)
   }
 
   const hasLyrics = lines.length > 0
 
   return (
-    <div className="flex min-h-full flex-col bg-background">
+      <div className="flex min-h-full flex-col bg-background">
       <Header onHomeClick={handleReset} audioUrl={audioUrl} audioTitle={audioTitle} audioArtist={audioArtist} />
 
       {showBackTop && (
@@ -178,7 +193,7 @@ export default function Home() {
 
       <main className="flex flex-1 flex-col">
         {!hasLyrics ? (
-          <div className="mx-auto flex w-full max-w-2xl flex-col items-center justify-center gap-8 px-4 py-20">
+          <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-8 px-4 pt-20">
             <div className="text-center">
               <h1 className="text-4xl font-bold tracking-[0.08em] text-[oklch(0.45_0.06_40)] dark:text-[oklch(0.7_0.06_40)]"
                 style={{ textShadow: "2px 2px 0 oklch(0.85_0.02_60 / 0.4)" }}>
@@ -189,8 +204,8 @@ export default function Home() {
 
             {kuroshiroError && (
               <div className="w-full rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                解析引擎加载失败，请刷新页面重试
-                <button onClick={() => window.location.reload()} className="ml-2 underline hover:no-underline">刷新</button>
+                解析引擎加载失败，请重试
+                <button onClick={retry} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
 
@@ -199,37 +214,18 @@ export default function Home() {
             {inputMode === "search" ? (
               <div className="relative w-full pb-12">
                 <SearchBar query={search.query} results={search.results} isSearching={search.isSearching}
-                  onQueryChange={(q) => { setShowSearchHint(false); search.debouncedSearch(q) }}
+                  onQueryChange={(q) => { search.debouncedSearch(q) }}
                   onSearchFocus={() => {
                     setSearchFocused(true)
-                    if (search.query.trim().length > 0 && search.results.length === 0) {
+                    if (search.query.trim().length > 0 && !search.isSearching) {
                       search.search(search.query)
                     }
                   }}
                   onSelect={handleSelectSong} error={search.error}
                   noLyricsSongs={noLyricsSongs} forceOpen={forceOpenSearch} />
-                {showSearchHint && (
-                  <p className="absolute top-[310px] left-0 right-0 text-center text-sm text-muted-foreground/60">
-                    卡住了？试试输入歌曲名，或
-                    <button onClick={() => window.location.reload()} className="ml-1 underline hover:no-underline">刷新页面</button>
-                  </p>
-                )}
               </div>
             ) : (
               <div className="w-full"><PasteInput onPaste={search.setPastedLyrics} /></div>
-            )}
-
-            {!kuroshiroReady && !kuroshiroError && (
-              <div className="flex flex-col items-center gap-3 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                  正在加载日语解析引擎...
-                </div>
-                <a href="/"
-                  className="text-primary underline transition-colors hover:no-underline">
-                  长时间未响应？刷新试试
-                </a>
-              </div>
             )}
           </div>
         ) : (
@@ -271,7 +267,9 @@ export default function Home() {
                   FROSTED
                 )}>
                   {editingEnabled && (
-                    <EditPanel selectedWord={selectedEditWord}
+                    <EditPanel
+                      key={selectedEditWord ? `${selectedEditWord.tokenId}-${selectedEditWord.lineIndex}` : "empty"}
+                      selectedWord={selectedEditWord}
                       onApplyReading={handleApplyEditReading}
                       onClose={() => { setEditingEnabled(false); setSelectedEditWord(null) }} />
                   )}
@@ -286,7 +284,9 @@ export default function Home() {
                   <button onClick={() => { setEditingEnabled(false); setSelectedEditWord(null) }}
                     className="text-muted-foreground/50 hover:text-foreground">✕</button>
                 </div>
-                <EditPanel selectedWord={selectedEditWord}
+                <EditPanel
+                  key={selectedEditWord ? `${selectedEditWord.tokenId}-${selectedEditWord.lineIndex}` : "empty-mobile"}
+                  selectedWord={selectedEditWord}
                   onApplyReading={handleApplyEditReading}
                   onClose={() => { setEditingEnabled(false); setSelectedEditWord(null) }}
                   floating />

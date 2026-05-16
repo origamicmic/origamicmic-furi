@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   const token = process.env.GENIUS_ACCESS_TOKEN?.trim() || ""
 
   try {
-    let songs = await searchAllSources(trimmed, token)
+    const songs = await searchAllSources(trimmed, token)
 
     const JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]/
     songs.sort((a, b) => {

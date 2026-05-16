@@ -12,31 +12,48 @@ export function useSearch() {
   const [lyricsText, setLyricsText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const latestQueryRef = useRef("")
+  const abortRef = useRef<AbortController | null>(null)
 
   const search = useCallback(async (q: string) => {
     if (!q || q.trim().length === 0) {
       setResults([])
+      latestQueryRef.current = ""
+      setIsSearching(false)
       return
     }
 
+    // Abort previous in-flight request
+    if (abortRef.current) abortRef.current.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    const queryKey = q.trim()
+    latestQueryRef.current = queryKey
     setIsSearching(true)
     setError(null)
 
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`)
+      const res = await fetch(`/api/search?q=${encodeURIComponent(queryKey)}`, {
+        signal: controller.signal,
+      })
+      if (latestQueryRef.current !== queryKey) return
       if (!res.ok) {
         setError(`搜索请求失败 (${res.status})`)
         setResults([])
         return
       }
       const data = await res.json()
+      if (latestQueryRef.current !== queryKey) return
       setResults(data.songs ?? [])
       if (data.error) setError(data.error)
-    } catch {
+    } catch (e) {
+      if ((e as Error).name === "AbortError") return
+      if (latestQueryRef.current !== queryKey) return
       setError("搜索请求失败，请检查网络")
       setResults([])
     } finally {
-      setIsSearching(false)
+      if (latestQueryRef.current === queryKey) setIsSearching(false)
     }
   }, [])
 
@@ -46,9 +63,11 @@ export function useSearch() {
       if (timerRef.current) clearTimeout(timerRef.current)
       if (!q || q.trim().length === 0) {
         setResults([])
+        latestQueryRef.current = ""
+        setIsSearching(false)
         return
       }
-      timerRef.current = setTimeout(() => search(q), 150)
+      timerRef.current = setTimeout(() => search(q), 300)
     },
     [search]
   )

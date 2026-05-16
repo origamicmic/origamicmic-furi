@@ -4,6 +4,17 @@ import { getSupabase } from "@/lib/supabase"
 const VOTE_DAILY_LIMIT = 50
 
 const voteCounters = new Map<string, { date: string; count: number }>()
+let lastCleanup = Date.now()
+
+function cleanExpiredCounters() {
+  const now = Date.now()
+  if (now - lastCleanup < 60_000) return
+  lastCleanup = now
+  const today = new Date().toISOString().slice(0, 10)
+  for (const [key, record] of voteCounters) {
+    if (record.date !== today) voteCounters.delete(key)
+  }
+}
 
 function hashIp(ip: string): string {
   let hash = 0
@@ -32,6 +43,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const text = await request.text()
+    cleanExpiredCounters()
     if (text.length > 1000) return Response.json({ error: "请求体过大" }, { status: 413 })
 
     const body = JSON.parse(text)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Check, RotateCcw, Send, ThumbsUp, ThumbsDown, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useRecommendations } from "@/hooks/use-recommendations"
@@ -20,8 +20,6 @@ export function EditPanel({ selectedWord, onApplyReading, onClose, floating }: E
 
   useEffect(() => {
     if (selectedWord) {
-      setInputValue("")
-      setError(null)
       fetchRecommendations(selectedWord.surface)
       inputRef.current?.focus()
     }
@@ -55,12 +53,17 @@ export function EditPanel({ selectedWord, onApplyReading, onClose, floating }: E
     }
   }
 
-  const score = (r: { votes_up: number; votes_down: number }) => r.votes_up - r.votes_down
-  const sorted = [...recommendations].sort((a, b) => {
-    if (a.is_official && !b.is_official) return -1
-    if (!a.is_official && b.is_official) return 1
-    return score(b) - score(a)
-  })
+  const score = useMemo(() => {
+    return (r: { votes_up: number; votes_down: number }) => r.votes_up - r.votes_down
+  }, [])
+  const sorted = useMemo(() =>
+    [...recommendations].sort((a, b) => {
+      if (a.is_official && !b.is_official) return -1
+      if (!a.is_official && b.is_official) return 1
+      return score(b) - score(a)
+    }),
+    [recommendations, score]
+  )
 
   const selectedHeader = selectedWord && (
     <p className="text-xs text-muted-foreground/50">
@@ -76,7 +79,7 @@ export function EditPanel({ selectedWord, onApplyReading, onClose, floating }: E
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") handleConfirmLocal() }}
-        placeholder="输入新读音..."
+        placeholder={selectedWord?.reading || "输入新读音..."}
         className="min-w-0 flex-1 rounded-lg border border-border/60 bg-transparent px-3 py-1.5 text-sm outline-none focus:border-primary"
       />
       <button
@@ -96,9 +99,9 @@ export function EditPanel({ selectedWord, onApplyReading, onClose, floating }: E
         {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
       </button>
       <button
-        onClick={() => { setInputValue(""); onApplyReading(selectedWord?.reading ?? "") }}
+        onClick={() => { setInputValue(selectedWord?.reading ?? ""); onApplyReading(selectedWord?.reading ?? "") }}
         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:bg-accent/50"
-        title="撤销"
+        title="撤回原读音"
       >
         <RotateCcw className="h-3.5 w-3.5" />
       </button>

@@ -46,8 +46,6 @@ export function useRecommendations() {
         throw new Error(data.error || "今日提交次数已达上限")
       }
       return false
-    } catch (e) {
-      throw e
     } finally {
       setSubmitting(false)
     }
@@ -57,30 +55,26 @@ export function useRecommendations() {
     recommendationId: string,
     vote: "up" | "down"
   ): Promise<boolean> => {
-    try {
-      const res = await fetch("/api/vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recommendation_id: recommendationId, vote }),
-      })
-      const data = await res.json()
-      if (data.success && data.votes) {
-        setRecommendations((prev) =>
-          prev.map((r) =>
-            r.id === recommendationId
-              ? { ...r, votes_up: data.votes.votes_up, votes_down: data.votes.votes_down }
-              : r
-          )
+    const res = await fetch("/api/vote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recommendation_id: recommendationId, vote }),
+    })
+    const data = await res.json()
+    if (data.success && data.votes) {
+      setRecommendations((prev) =>
+        prev.map((r) =>
+          r.id === recommendationId
+            ? { ...r, votes_up: data.votes.votes_up, votes_down: data.votes.votes_down }
+            : r
         )
-        return true
-      }
-      if (res.status === 429) {
-        throw new Error(data.error || "今日投票次数已达上限")
-      }
-      return false
-    } catch (e) {
-      throw e
+      )
+      return true
     }
+    if (res.status === 429) {
+      throw new Error(data.error || "今日投票次数已达上限")
+    }
+    return false
   }, [])
 
   return { recommendations, loading, submitting, fetchRecommendations, submitRecommendation, castVote }

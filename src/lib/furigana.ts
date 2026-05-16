@@ -1,25 +1,38 @@
+"use client"
+
 import Kuroshiro from "kuroshiro"
 import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji"
 import type { LyricToken, LyricLine, ConvertMode, CorrectionEntry } from "@/types"
+import ON_READINGS from "./on-readings"
 
 let kuroshiroInstance: Kuroshiro | null = null
 let initPromise: Promise<void> | null = null
+const conversionCache = new Map<string, string>()
 
-const INIT_TIMEOUT = 30000
+const INIT_TIMEOUT = 10000
 
 export async function initKuroshiro(): Promise<void> {
   if (kuroshiroInstance) return
   if (initPromise) return initPromise
 
   initPromise = (async () => {
+    conversionCache.clear()
     kuroshiroInstance = new Kuroshiro()
     const analyzer = new KuromojiAnalyzer({ dictPath: "/dict/" })
 
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("字典加载超时，请刷新页面重试")), INIT_TIMEOUT)
-    )
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error("字典加载超时，请稍后重试")),
+        INIT_TIMEOUT
+      )
+    })
 
-    await Promise.race([kuroshiroInstance.init(analyzer), timeout])
+    try {
+      await Promise.race([kuroshiroInstance.init(analyzer), timeout])
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+    }
   })()
 
   try {
@@ -31,8 +44,46 @@ export async function initKuroshiro(): Promise<void> {
   }
 }
 
+export function resetEngine() {
+  initPromise = null
+  kuroshiroInstance = null
+  conversionCache.clear()
+}
+
+export async function isEngineAlive(): Promise<boolean> {
+  if (!kuroshiroInstance) return false
+  try {
+    const result = await Promise.race([
+      kuroshiroInstance.convert("あ", { to: "hiragana" }),
+      new Promise<null>((_, reject) => setTimeout(() => reject(new Error("timeout")), 2000)),
+    ])
+    return result === "あ"
+  } catch {
+    return false
+  }
+}
+
 function generateTokenId(index: number, tokenIndex: number): string {
   return `t-${index}-${tokenIndex}`
+}
+
+async function cachedConvert(text: string, to: "hiragana" | "romaji"): Promise<string | null> {
+  if (!kuroshiroInstance) return null
+  const cacheKey = `${to}:${text}`
+  const cached = conversionCache.get(cacheKey)
+  if (cached !== undefined) return cached || null
+  try {
+    const r = await kuroshiroInstance.convert(text, { to })
+    if (r !== text) {
+      conversionCache.set(cacheKey, r)
+      return r
+    }
+    conversionCache.set(cacheKey, "")
+    return null
+  } catch {
+    conversionCache.set(cacheKey, "")
+    return null
+  }
 }
 
 const KANJI_REGEX = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]/
@@ -44,16 +95,13 @@ const KANJI_FALLBACK: Record<string, string> = {
   "訊": "たず",
   "屡": "しばしば",
   "偏": "かたよ",
-  "葛": "くず",
   "攣": "つ",
   "臀": "しり",
   "繋": "つな",
   "雖": "いえど",
   "剥": "は",
-  "罠": "わな",
   "箒": "ほうき",
   "霾": "つちふ",
-  "闇": "やみ",
   "妖": "あや",
   "歪": "ゆが",
   "覗": "のぞ",
@@ -83,9 +131,7 @@ const KANJI_FALLBACK: Record<string, string> = {
   "逅": "こう",
   "蔽": "おお",
   "閃": "ひらめ",
-  "渦": "うず",
   "渓": "たに",
-  "淵": "ふち",
   "湊": "みなと",
   "甦": "よみがえ",
   "其": "そ",
@@ -93,19 +139,18 @@ const KANJI_FALLBACK: Record<string, string> = {
   "等": "など",
 }
 
-const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "の", "れ", "た", "て", "れる", "ける", "める", "べる", "じる", "ずる"]
+const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "じる", "ずる"]
 
 async function tryPseudoWordFallback(ch: string, to: "hiragana" | "romaji"): Promise<string | null> {
-  if (!kuroshiroInstance) return null
   for (const suffix of PSEUDO_SUFFIXES) {
     try {
       const word = ch + suffix
-      const reading = await kuroshiroInstance.convert(word, { to: "hiragana" })
-      if (reading !== word && reading.length > suffix.length && reading.endsWith(suffix)) {
+      const reading = await cachedConvert(word, "hiragana")
+      if (reading && reading.length > suffix.length && reading.endsWith(suffix)) {
         const stem = reading.slice(0, reading.length - suffix.length)
         if (to === "romaji") {
-          const r = await kuroshiroInstance.convert(stem, { to: "romaji" })
-          return r !== stem ? normalizeRomaji(r) : normalizeRomaji(stem)
+          const r = await cachedConvert(stem, "romaji")
+          return r ? normalizeRomaji(r) : normalizeRomaji(stem)
         }
         return stem
       }
@@ -117,14 +162,9 @@ async function tryPseudoWordFallback(ch: string, to: "hiragana" | "romaji"): Pro
 async function lookupKanjiReading(ch: string, to: "hiragana" | "romaji"): Promise<string | null> {
   if (KANJI_FALLBACK[ch]) {
     const fallback = KANJI_FALLBACK[ch]
-    if (to === "romaji" && kuroshiroInstance) {
-      try {
-        return await kuroshiroInstance.convert(fallback, { to: "romaji" })
-      } catch {
-        return fallback
-      }
-    }
-    return fallback
+    if (to !== "romaji") return fallback
+    const r = await cachedConvert(fallback, "romaji")
+    return r ?? fallback
   }
   return null
 }
@@ -234,15 +274,8 @@ function normalizeRomaji(text: string): string {
 }
 
 async function tryConvertKuroshiro(text: string, to: "hiragana" | "romaji"): Promise<string | null> {
-  if (!kuroshiroInstance) return null
-  try {
-    const opts: { to: "hiragana" | "romaji" } = { to }
-    const r = await kuroshiroInstance.convert(text, opts)
-    const result = r !== text ? r : null
-    return to === "romaji" && result ? normalizeRomaji(result) : result
-  } catch {
-    return null
-  }
+  const result = await cachedConvert(text, to)
+  return to === "romaji" && result ? normalizeRomaji(result) : result
 }
 
 async function convertTokenReading(
@@ -253,15 +286,29 @@ async function convertTokenReading(
   if (result) return result
 
   const chars = [...surface]
+  const singleKanji = chars.length === 1 && KANJI_REGEX.test(chars[0])
   const readings: string[] = []
   for (const ch of chars) {
     if (KANJI_REGEX.test(ch)) {
+      const kuro = await tryConvertKuroshiro(ch, to)
+      if (kuro) { readings.push(kuro); continue }
+      const onyomi = ON_READINGS[ch]
+      if (onyomi) {
+        if (to === "romaji") {
+          const r = await cachedConvert(onyomi, "romaji")
+          readings.push(r ? normalizeRomaji(r) : normalizeRomaji(onyomi))
+        } else {
+          readings.push(onyomi)
+        }
+        continue
+      }
       const fallback = await lookupKanjiReading(ch, to)
       if (fallback) { readings.push(fallback); continue }
-      const pseudo = await tryPseudoWordFallback(ch, to)
-      if (pseudo) { readings.push(pseudo); continue }
-      const kuro = await tryConvertKuroshiro(ch, to)
-      readings.push(kuro ?? ch)
+      if (singleKanji) {
+        const pseudo = await tryPseudoWordFallback(ch, to)
+        if (pseudo) { readings.push(pseudo); continue }
+      }
+      readings.push(ch)
     } else {
       if (to === "romaji" && (HIRAGANA_REGEX.test(ch) || KATAKANA_REGEX.test(ch))) {
         const kuro = await tryConvertKuroshiro(ch, to)
@@ -306,6 +353,22 @@ export async function convertLine(
     }
   }))
 
+  // Split unresolved multi-char kanji tokens so compound merge can re-attempt
+  tokens = tokens.flatMap((token) => {
+    if (token.isKanji && token.surface.length > 1 && token.reading === token.surface) {
+      return [...token.surface].map((ch, ci) => ({
+        surface: ch,
+        reading: ch,
+        isKanji: KANJI_REGEX.test(ch),
+        isKana: false,
+        isEditable: true,
+        tokenId: `${token.tokenId}-${ci}`,
+        userModified: false,
+      }))
+    }
+    return [token]
+  })
+
   // Merge adjacent kanji tokens that form a compound word
   let merged = tokens
   for (let i = 0; i < merged.length - 1; i++) {
@@ -314,8 +377,8 @@ export async function convertLine(
     if (!a.isKanji || !b.isKanji) continue
     const combined = a.surface + b.surface
     try {
-      const r = await kuroshiroInstance!.convert(combined, { to: "hiragana" })
-      if (r !== combined) {
+      const r = await cachedConvert(combined, "hiragana")
+      if (r) {
         const mergedToken = { ...a, surface: combined, reading: r, tokenId: a.tokenId }
         merged = [...merged.slice(0, i), mergedToken, ...merged.slice(i + 2)]
         i--
@@ -328,7 +391,7 @@ export async function convertLine(
     for (const token of tokens) {
       try {
         const r = Kuroshiro.Util.kanaToRomaji(token.reading)
-        if (r && r !== token.reading) token.reading = r
+        if (r && r !== token.reading) token.reading = normalizeRomaji(r)
       } catch { /* skip */ }
     }
   }
@@ -366,13 +429,17 @@ export async function tokenizeLyrics(
   const lines = splitLyricsToLines(normalized)
   const results = await Promise.allSettled(
     lines.map(async (line, index) => {
-      const tokens = await convertLine(line, mode, index, corrections)
-      return { index, original: line, tokens }
+      try {
+        const tokens = await convertLine(line, mode, index, corrections)
+        return { index, original: line, tokens }
+      } catch {
+        return { index, original: line, tokens: [] }
+      }
     })
   )
-  return results.map((r) =>
+  return results.map((r, i) =>
     r.status === "fulfilled"
       ? r.value
-      : { index: 0, original: "", tokens: [] }
+      : { index: i, original: lines[i] ?? "", tokens: [] }
   )
 }

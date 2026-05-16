@@ -3,13 +3,20 @@ import type { LyricsSource } from "./types"
 
 const NETEASE_API = "https://music.163.com/api"
 
+const BROWSER_HEADERS: Record<string, string> = {
+  "Referer": "https://music.163.com",
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "application/json, text/plain, */*",
+  "Accept-Language": "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7",
+}
+
 export class NeteaseSource implements LyricsSource {
   name = "netease"
 
   async search(query: string): Promise<SongResult[]> {
     const res = await fetch(
       `${NETEASE_API}/search/get?s=${encodeURIComponent(query)}&type=1&limit=20`,
-      { headers: { Referer: "https://music.163.com" } }
+      { headers: BROWSER_HEADERS }
     )
 
     if (!res.ok) {
@@ -30,9 +37,10 @@ export class NeteaseSource implements LyricsSource {
   }
 
   async fetchLyrics(songId: string): Promise<string> {
+    // Try primary lyrics endpoint
     const res = await fetch(
       `${NETEASE_API}/song/lyric?id=${songId}&lv=1&kv=1&tv=-1`,
-      { headers: { Referer: "https://music.163.com" } }
+      { headers: BROWSER_HEADERS }
     )
 
     if (!res.ok) {
@@ -40,10 +48,26 @@ export class NeteaseSource implements LyricsSource {
     }
 
     const data = await res.json()
-    const lyric = data.lrc?.lyric
+    const lrcLyric: string = data.lrc?.lyric || ""
+    const tLyric: string = data.tlyric?.lyric || ""
+
+    // Prefer lyrics that contain Japanese kana (hiragana/katakana).
+    // Netease may return Chinese translations as the primary lyric;
+    // the original Japanese version is often in the tlyric field.
+    const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/
+    const lyric = lrcLyric && KANA_RE.test(lrcLyric)
+      ? lrcLyric
+      : tLyric && KANA_RE.test(tLyric)
+        ? tLyric
+        : lrcLyric || tLyric
 
     if (typeof lyric === "string" && lyric.length > 0) {
       return this.parseLrc(lyric)
+    }
+
+    // Fallback: try uncolored lyrics (nolyric) if lrc is empty
+    if (data.nolyric === false) {
+      throw new Error("Lyrics locked (requires login)")
     }
 
     throw new Error("No lyrics found on Netease")

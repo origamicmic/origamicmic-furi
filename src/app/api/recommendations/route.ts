@@ -5,6 +5,17 @@ const MAX_LENGTH = 100
 const DAILY_LIMIT = 5
 
 const ipCounters = new Map<string, { date: string; count: number }>()
+let lastCleanup = Date.now()
+
+function cleanExpiredCounters() {
+  const now = Date.now()
+  if (now - lastCleanup < 60_000) return
+  lastCleanup = now
+  const today = new Date().toISOString().slice(0, 10)
+  for (const [key, record] of ipCounters) {
+    if (record.date !== today) ipCounters.delete(key)
+  }
+}
 
 function sanitize(str: string): string {
   return str.replace(/[<>"']/g, "").trim()
@@ -87,6 +98,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const text = await request.text()
+    cleanExpiredCounters()
     if (text.length > 2000) {
       return Response.json({ error: "请求体过大" }, { status: 413 })
     }

@@ -12,7 +12,8 @@
 - 🇯🇵 **自动注音** — Kuromoji + Kuroshiro 引擎，汉字转平假名或罗马音
 - 🟠 **高亮对照** — 原文和注音两侧同步高亮，汉字与读音一一对应
 - ✏️ **在线编辑** — 点击汉字即可修改读音，提交修正供社区投票
-- 📤 **多种导出** — TXT（原文+注音）、TXT（仅注音）、LRC（带时间戳时可用）
+- 📤 **多种导出** — TXT（原文+注音）、TXT（仅注音）、LRC（带时间戳时可用），词间自动空格分隔
+- 🎬 **搜索动画** — 多源搜索等待时下拉面板显示 ASCII 动效（支持自定义 GIF 转换）
 
 
 ## 🚀 快速开始
@@ -79,24 +80,36 @@ src/
 │   ├── export/     # 导出按钮与格式处理
 │   ├── layout/     # 顶栏、播放器、主题提供者
 │   ├── lyrics/     # 原文面板、注音面板
-│   ├── search/     # 搜索框、模式选择、粘贴输入
+│   ├── search/     # 搜索框、模式选择、粘贴输入、ASCII 动画
 │   └── ui/         # 基础 UI 组件
 ├── hooks/          # 自定义 React hooks
+├── images/         # 图片资源（GIF 等）
 ├── lib/
 │   ├── lyrics-sources/  # 歌词源适配器（网易云、Genius、Lyrics.ovh）
 │   ├── furigana.ts      # 日语引擎初始化、分词、转换
 │   ├── export.ts        # 导出功能
 │   └── supabase.ts      # Supabase 客户端
-└── types/          # TypeScript 类型定义
+├── types/          # TypeScript 类型定义
+└── server.js       # 开发服务器（禁用 bfcache）
 ```
 
 ## 🎛️ 开发
 
 ```bash
-npm run dev      # 开发模式（Turbopack）
+npm run dev      # 开发模式（Turbopack，自定义 server.js 禁用 bfcache）
 npm run build    # 生产构建
 npm run lint     # 代码检查
 ```
+
+### 自定义 ASCII 动画
+
+将 GIF 放到 `src/images/` 下，运行转换脚本：
+
+```bash
+node scripts/convert-gif.mjs src/images/your-gif.gif
+```
+
+脚本会将 GIF 逐帧转为 ASCII 并写入 `src/components/ascii-loader-frames.ts`，搜索时自动在下拉面板中播放。
 
 ## 👤 作者
 

@@ -8,7 +8,7 @@ export function exportAsTxt(data: LyricData): string {
   const header = `${data.title} - ${data.artist}\n${"=".repeat(30)}\n\n`
   const body = data.lines
     .map((line) => {
-      const converted = line.tokens.map(getTokenText).join("")
+      const converted = line.tokens.map(getTokenText).join(" ")
       return `${line.original}\n${converted}\n`
     })
     .join("\n")
@@ -28,7 +28,7 @@ export function exportAsLrc(data: LyricData): string {
   lines.push(`[ar:${data.artist}]`)
 
   for (const line of data.lines) {
-    const converted = line.tokens.map(getTokenText).join("")
+    const converted = line.tokens.map(getTokenText).join(" ")
     if (line.timestamp !== undefined) {
       lines.push(`[${formatTimestamp(line.timestamp)}]${line.original}`)
       lines.push(`[${formatTimestamp(line.timestamp)}]${converted}`)
@@ -43,7 +43,7 @@ export function exportAsLrc(data: LyricData): string {
 
 export function exportAsConvertedOnlyTxt(data: LyricData): string {
   return data.lines
-    .map((line) => line.tokens.map(getTokenText).join(""))
+    .map((line) => line.tokens.map(getTokenText).join(" "))
     .join("\n")
 }
 
