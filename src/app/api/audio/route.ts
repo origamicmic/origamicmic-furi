@@ -66,40 +66,42 @@ export async function GET(request: NextRequest) {
   if (!id || !/^\d+$/.test(id)) return new Response(null, { status: 400 })
 
   // Priority 1: EAPI (NetEase web player API — best song coverage)
-  try {
-    const params = eapiEncrypt("/api/song/enhance/player/url", {
-      ids: `[${id}]`,
-      br: 999000,
-    })
-    const res = await fetch("https://interface3.music.163.com/eapi/song/enhance/player/url", {
-      method: "POST",
-      headers: {
-        ...UPSTREAM_HEADERS,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Cookie": "os=pc",
-      },
-      body: `params=${encodeURIComponent(params)}`,
-      signal: AbortSignal.timeout(8000),
-    })
+  // Try bitrates from highest to lowest — some songs only have specific qualities
+  for (const br of [999000, 320000, 128000]) {
+    try {
+      const params = eapiEncrypt("/api/song/enhance/player/url", {
+        ids: `[${id}]`,
+        br,
+      })
+      const res = await fetch("https://interface3.music.163.com/eapi/song/enhance/player/url", {
+        method: "POST",
+        headers: {
+          ...UPSTREAM_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Cookie": "os=pc",
+        },
+        body: `params=${encodeURIComponent(params)}`,
+        signal: AbortSignal.timeout(8000),
+      })
 
-    if (res.ok) {
-      const data = await res.json()
-      const song = data.data?.[0]
-      if (song?.url && !song.freeTrialInfo) {
-        const validatedUrl = song.url.replace(/^http:\/\//, "https://")
-        if (isValidAudioUrl(validatedUrl)) {
-          // Follow one level of CDN redirect to get the final stream URL
-          try {
-            const final = await followRedirects(validatedUrl)
-            const ct = (final.headers.get("content-type") || "").toLowerCase()
-            if (ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")) {
-              return redirectToAudio(final.url)
-            }
-          } catch {}
+      if (res.ok) {
+        const data = await res.json()
+        const song = data.data?.[0]
+        if (song?.url && !song.freeTrialInfo) {
+          const validatedUrl = song.url.replace(/^http:\/\//, "https://")
+          if (isValidAudioUrl(validatedUrl)) {
+            try {
+              const final = await followRedirects(validatedUrl)
+              const ct = (final.headers.get("content-type") || "").toLowerCase()
+              if (ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")) {
+                return redirectToAudio(final.url)
+              }
+            } catch {}
+          }
         }
       }
-    }
-  } catch {}
+    } catch {}
+  }
 
   // Priority 2-3: Legacy /song/media/outer/url
   for (const suffix of ["", ".mp3"]) {

@@ -1,13 +1,28 @@
 import type { SongResult } from "@/types"
 import type { LyricsSource } from "./types"
+import crypto from "crypto"
 
 const NETEASE_API = "https://music.163.com/api"
+
+const EAPI_KEY = process.env.EAPI_KEY || "e82ckenh8dichen8"
+
+function eapiEncrypt(path: string, body: Record<string, unknown>): string {
+  const text = JSON.stringify(body)
+  const message = `nobody${path}use${text}md5forencrypt`
+  const digest = crypto.createHash("md5").update(message, "utf8").digest("hex")
+  const data = `${path}-36cd479b6b5-${text}-36cd479b6b5-${digest}`
+  const cipher = crypto.createCipheriv("aes-128-ecb", EAPI_KEY, "")
+  cipher.setAutoPadding(true)
+  let encrypted = cipher.update(data, "utf8", "hex")
+  encrypted += cipher.final("hex")
+  return encrypted.toUpperCase()
+}
 
 const BROWSER_HEADERS: Record<string, string> = {
   "Referer": "https://music.163.com",
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Accept": "application/json, text/plain, */*",
-  "Accept-Language": "zh-CN,zh;q=0.9,ja;q=0.8,en;q=0.7",
+  "Accept-Language": "ja;q=0.9,zh-CN,zh;q=0.8,en;q=0.7",
 }
 
 export class NeteaseSource implements LyricsSource {
@@ -37,7 +52,45 @@ export class NeteaseSource implements LyricsSource {
   }
 
   async fetchLyrics(songId: string): Promise<string> {
-    // Try primary lyrics endpoint
+    // Priority 1: unencrypted GET endpoint
+    const data = await this.fetchLyricsRaw(songId)
+    const lyric = this.pickBestLyric(data)
+    if (lyric) return lyric
+
+    // Priority 2: EAPI encrypted POST endpoint (bypasses uncollected/sgc for some songs)
+    try {
+      const params = eapiEncrypt("/api/song/lyric", {
+        id: songId,
+        lv: 1,
+        kv: 1,
+        tv: -1,
+      })
+      const res = await fetch("https://interface3.music.163.com/eapi/song/lyric", {
+        method: "POST",
+        headers: {
+          ...BROWSER_HEADERS,
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Cookie": "os=pc",
+        },
+        body: `params=${encodeURIComponent(params)}`,
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.ok) {
+        const eapiData = await res.json()
+        const eapiLyric = this.pickBestLyric(eapiData)
+        if (eapiLyric) return eapiLyric
+      }
+    } catch {}
+
+    // Fallback: check nolyric flag for better error message
+    if (data.nolyric === false) {
+      throw new Error("Lyrics locked (requires login)")
+    }
+
+    throw new Error("No lyrics found on Netease")
+  }
+
+  private async fetchLyricsRaw(songId: string): Promise<Record<string, unknown>> {
     const res = await fetch(
       `${NETEASE_API}/song/lyric?id=${encodeURIComponent(songId)}&lv=1&kv=1`,
       { headers: BROWSER_HEADERS }
@@ -47,14 +100,14 @@ export class NeteaseSource implements LyricsSource {
       throw new Error(`Netease lyrics fetch failed: ${res.status}`)
     }
 
-    const data = await res.json()
-    const lrcLyric: string = data.lrc?.lyric || ""
-    const kLyric: string = data.klyric?.lyric || ""
-    const tLyric: string = data.tlyric?.lyric || ""
+    return res.json()
+  }
 
-    // Prefer lyrics with the highest density of Japanese kana (hiragana/katakana).
-    // Netease may return Chinese translations as the primary lyric;
-    // the original Japanese version is often in the klyric or tlyric field.
+  private pickBestLyric(data: Record<string, unknown>): string | null {
+    const lrcLyric: string = (data.lrc as Record<string, string>)?.lyric || ""
+    const kLyric: string = (data.klyric as Record<string, string>)?.lyric || ""
+    const tLyric: string = (data.tlyric as Record<string, string>)?.lyric || ""
+
     const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/g
     const kanaDensity = (text: string): number => {
       if (!text) return 0
@@ -72,18 +125,13 @@ export class NeteaseSource implements LyricsSource {
     ].filter(c => c.text)
 
     candidates.sort((a, b) => b.density - a.density)
-    const lyric = candidates[0]?.text || ""
+    const lyric = candidates[0]?.text
 
     if (typeof lyric === "string" && lyric.length > 0) {
       return this.parseLrc(lyric)
     }
 
-    // Fallback: try uncolored lyrics (nolyric) if lrc is empty
-    if (data.nolyric === false) {
-      throw new Error("Lyrics locked (requires login)")
-    }
-
-    throw new Error("No lyrics found on Netease")
+    return null
   }
 
   private parseLrc(lrc: string): string {
