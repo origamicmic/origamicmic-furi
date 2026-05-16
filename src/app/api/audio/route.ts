@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server"
 import crypto from "crypto"
 
-const EAPI_KEY = "e82ckenh8dichen8"
+const EAPI_KEY = process.env.EAPI_KEY || "e82ckenh8dichen8"
 
 function eapiEncrypt(path: string, body: Record<string, unknown>): string {
   const text = JSON.stringify(body)
