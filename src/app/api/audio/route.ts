@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
   try {
     const params = eapiEncrypt("/api/song/enhance/player/url", {
       ids: `[${id}]`,
-      br: 320000,
+      br: 999000,
     })
     const res = await fetch("https://interface3.music.163.com/eapi/song/enhance/player/url", {
       method: "POST",

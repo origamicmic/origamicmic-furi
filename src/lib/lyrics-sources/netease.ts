@@ -58,7 +58,9 @@ export class NeteaseSource implements LyricsSource {
     const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/g
     const kanaDensity = (text: string): number => {
       if (!text) return 0
-      const clean = text.replace(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g, "")
+      const clean = text
+        .replace(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g, "")
+        .replace(/<\d+,\d+>/g, "")
       const total = clean.replace(/\s/g, "").length || 1
       return ((clean.match(KANA_RE) || []).length) / total
     }
@@ -87,6 +89,7 @@ export class NeteaseSource implements LyricsSource {
   private parseLrc(lrc: string): string {
     return lrc
       .replace(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g, "")
+      .replace(/<\d+,\d+>/g, "")
       .replace(/\n{3,}/g, "\n\n")
       .trim()
   }

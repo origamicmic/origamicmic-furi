@@ -5,6 +5,7 @@ import { LyricsOvhSource } from "./lyricsovh"
 import type { LyricsSource } from "./types"
 
 const JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]/
+const KANA_REGEX = /[\u3040-\u309f\u30a0-\u30ff]/
 
 function buildSources(geniusToken: string): LyricsSource[] {
   const s: LyricsSource[] = []
@@ -75,7 +76,10 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
   // Try primary source
   for (const source of sources) {
     if (source.name === song.source) {
-      try { return await source.fetchLyrics(song.id) } catch {}
+      try {
+        const lyrics = await source.fetchLyrics(song.id)
+        if (KANA_REGEX.test(lyrics)) return lyrics
+      } catch {}
     }
   }
 
@@ -85,10 +89,16 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
       try {
         const searchResults = await source.search(`${song.title} ${song.artist}`)
         if (searchResults.length > 0) {
-          try { return await source.fetchLyrics(searchResults[0].id) } catch {}
+          try {
+            const lyrics = await source.fetchLyrics(searchResults[0].id)
+            if (KANA_REGEX.test(lyrics)) return lyrics
+          } catch {}
           // Try second result if first fails
           if (searchResults.length > 1) {
-            try { return await source.fetchLyrics(searchResults[1].id) } catch {}
+            try {
+              const lyrics = await source.fetchLyrics(searchResults[1].id)
+              if (KANA_REGEX.test(lyrics)) return lyrics
+            } catch {}
           }
         }
       } catch {}
@@ -98,7 +108,10 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
   // Fallback: try lyricsovh with artist|title
   for (const source of sources) {
     if (source.name === "lyricsovh") {
-      try { return await source.fetchLyrics(`${song.artist}|${song.title}`) } catch {}
+      try {
+        const lyrics = await source.fetchLyrics(`${song.artist}|${song.title}`)
+        if (KANA_REGEX.test(lyrics)) return lyrics
+      } catch {}
     }
   }
 
