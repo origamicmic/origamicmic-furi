@@ -49,17 +49,28 @@ export class NeteaseSource implements LyricsSource {
 
     const data = await res.json()
     const lrcLyric: string = data.lrc?.lyric || ""
+    const kLyric: string = data.klyric?.lyric || ""
     const tLyric: string = data.tlyric?.lyric || ""
 
-    // Prefer lyrics that contain Japanese kana (hiragana/katakana).
+    // Prefer lyrics with the highest density of Japanese kana (hiragana/katakana).
     // Netease may return Chinese translations as the primary lyric;
-    // the original Japanese version is often in the tlyric field.
-    const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/
-    const lyric = lrcLyric && KANA_RE.test(lrcLyric)
-      ? lrcLyric
-      : tLyric && KANA_RE.test(tLyric)
-        ? tLyric
-        : lrcLyric || tLyric
+    // the original Japanese version is often in the klyric or tlyric field.
+    const KANA_RE = /[\u3040-\u309f\u30a0-\u30ff]/g
+    const kanaDensity = (text: string): number => {
+      if (!text) return 0
+      const clean = text.replace(/\[\d{2}:\d{2}(\.\d{2,3})?\]/g, "")
+      const total = clean.replace(/\s/g, "").length || 1
+      return ((clean.match(KANA_RE) || []).length) / total
+    }
+
+    const candidates = [
+      { text: lrcLyric, density: kanaDensity(lrcLyric) },
+      { text: kLyric, density: kanaDensity(kLyric) },
+      { text: tLyric, density: kanaDensity(tLyric) },
+    ].filter(c => c.text)
+
+    candidates.sort((a, b) => b.density - a.density)
+    const lyric = candidates[0]?.text || ""
 
     if (typeof lyric === "string" && lyric.length > 0) {
       return this.parseLrc(lyric)
