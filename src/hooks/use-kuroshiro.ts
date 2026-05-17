@@ -52,14 +52,6 @@ export function useKuroshiro() {
       const msg = (err as Error).message
       errorRef.current = msg
       setError(msg)
-      // Schedule one automatic retry after backoff (in case of transient dict load failures)
-      setTimeout(() => {
-        if (!mounted.current) return
-        forceKuroshiroReset()
-        initRef.current = false
-        setError(null)
-        errorRef.current = null
-      }, 2500)
       return false
     } finally {
       initRef.current = false
@@ -93,6 +85,7 @@ export function useConvert(ensureReady?: () => Promise<boolean>) {
   const [lines, setLines] = useState<LyricLine[]>([])
   const [isConverting, setIsConverting] = useState(false)
   const generationRef = useRef(0)
+  const retryCountRef = useRef(0)
 
   const convert = useCallback(
     async (
@@ -105,8 +98,20 @@ export function useConvert(ensureReady?: () => Promise<boolean>) {
       try {
         if (ensureReady) {
           const ok = await ensureReady()
-          if (!ok || generationRef.current !== gen) return
+          if (!ok) {
+            if (retryCountRef.current < 1 && generationRef.current === gen) {
+              retryCountRef.current++
+              setIsConverting(false)
+              // Wait 3s then retry once — dict may have partially loaded in the first attempt
+              setTimeout(() => {
+                if (generationRef.current === gen) convert(lyrics, mode, corrections)
+              }, 3000)
+            }
+            return
+          }
         }
+        if (generationRef.current !== gen) return
+        retryCountRef.current = 0
         const result = await tokenizeLyrics(lyrics, mode, corrections)
         if (generationRef.current !== gen) return
         setLines(result)

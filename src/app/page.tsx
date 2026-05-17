@@ -46,7 +46,7 @@ function hasSubstringMatch(a: string, b: string): boolean {
 }
 
 export default function Home() {
-  const { error: kuroshiroError, ensureReady, retry } = useKuroshiro()
+  const { error: kuroshiroError, initializing, ensureReady, retry } = useKuroshiro()
   const { lines, setLines, isConverting, convert, updateToken, resetGeneration } = useConvert(ensureReady)
   const search = useSearch()
   const { corrections, loadCorrections, submitCorrection } = useCorrections()
@@ -237,7 +237,13 @@ export default function Home() {
             {kuroshiroError && (
               <div className="w-full rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 解析引擎加载失败，请重试
-                <button onClick={() => { retry(); lastLyricsRef.current = "" }} className="ml-2 underline hover:no-underline">重试</button>
+                <button onClick={() => { retry(); convert(search.lyricsText!, convertMode, corrections) }} className="ml-2 underline hover:no-underline">重试</button>
+              </div>
+            )}
+
+            {initializing && (
+              <div className="w-full rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary">
+                解析引擎初始化中...
               </div>
             )}
 
@@ -273,7 +279,7 @@ export default function Home() {
             {kuroshiroError && (
               <div className="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 解析引擎加载失败，请重试
-                <button onClick={() => { retry(); lastLyricsRef.current = "" }} className="ml-2 underline hover:no-underline">重试</button>
+                <button onClick={() => { retry(); convert(search.lyricsText!, convertMode, corrections) }} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
             <div className={`flex items-center justify-between rounded-2xl px-5 py-2 ${FROSTED}`}>

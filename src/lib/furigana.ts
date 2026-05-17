@@ -9,7 +9,7 @@ let kuroshiroInstance: Kuroshiro | null = null
 let initPromise: Promise<void> | null = null
 const conversionCache = new Map<string, string>()
 
-const INIT_TIMEOUT = 10000
+const INIT_TIMEOUT = 15000
 
 export async function initKuroshiro(): Promise<void> {
   if (kuroshiroInstance) return
