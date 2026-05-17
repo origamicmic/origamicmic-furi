@@ -143,7 +143,7 @@ export function EditorPanel({
           ))}
           {lines.length === 0 && (
             <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              请先输入歌词
+              {isConverting ? "解析引擎处理中..." : "请先选择歌曲"}
             </div>
           )}
         </div>

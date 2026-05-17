@@ -207,7 +207,7 @@ export default function Home() {
     updateToken(selectedEditWord.lineIndex, selectedEditWord.tokenId, reading)
   }
 
-  const hasLyrics = lines.some(l => l.tokens.length > 0) && !kuroshiroError
+  const hasLyrics = search.lyricsText !== null
 
   return (
       <div className="flex min-h-full flex-col bg-background">
@@ -298,7 +298,7 @@ export default function Home() {
               isMobile ? "flex-col" : "flex-row"
             )}>
               <div className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${FROSTED}`}>
-                <LyricsPanel lines={lines} title={data.title} artist={data.artist} highlightEnabled={highlightEnabled} />
+                <LyricsPanel lines={lines} rawText={search.lyricsText} isConverting={isConverting} title={data.title} artist={data.artist} highlightEnabled={highlightEnabled} />
               </div>
               <div className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${FROSTED}`}>
                 <EditorPanel lines={lines} mode={convertMode} onModeChange={setConvertMode}
