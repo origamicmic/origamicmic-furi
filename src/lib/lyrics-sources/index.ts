@@ -7,6 +7,12 @@ import type { LyricsSource } from "./types"
 const JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]/
 const KANA_REGEX = /[\u3040-\u309f\u30a0-\u30ff]/
 
+function logErr(source: string, e: unknown) {
+  if (process.env.NODE_ENV === "development") {
+    console.error(`[${source}]`, e instanceof Error ? e.message : String(e))
+  }
+}
+
 function buildSources(geniusToken: string): LyricsSource[] {
   const s: LyricsSource[] = []
   if (geniusToken) s.push(new GeniusSource(geniusToken))
@@ -79,7 +85,7 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
       try {
         const lyrics = await source.fetchLyrics(song.id)
         if (KANA_REGEX.test(lyrics)) return lyrics
-      } catch {}
+      } catch (e) { logErr(source.name, e) }
     }
   }
 
@@ -92,16 +98,16 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
           try {
             const lyrics = await source.fetchLyrics(searchResults[0].id)
             if (KANA_REGEX.test(lyrics)) return lyrics
-          } catch {}
+          } catch (e) { logErr("netease-fallback-1", e) }
           // Try second result if first fails
           if (searchResults.length > 1) {
             try {
               const lyrics = await source.fetchLyrics(searchResults[1].id)
               if (KANA_REGEX.test(lyrics)) return lyrics
-            } catch {}
+            } catch (e) { logErr("netease-fallback-2", e) }
           }
         }
-      } catch {}
+      } catch (e) { logErr("netease-search", e) }
     }
   }
 
@@ -111,7 +117,7 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
       try {
         const lyrics = await source.fetchLyrics(`${song.artist}|${song.title}`)
         if (KANA_REGEX.test(lyrics)) return lyrics
-      } catch {}
+      } catch (e) { logErr("lrclib", e) }
     }
   }
 
@@ -123,7 +129,7 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
         if (searchResults.length > 0) {
           return source.fetchLyrics(searchResults[0].id)
         }
-      } catch {}
+      } catch (e) { logErr("genius", e) }
     }
   }
 

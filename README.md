@@ -12,7 +12,9 @@
 - 🇯🇵 **自动注音** — Kuromoji + Kuroshiro 引擎，汉字转平假名或罗马音
 - 🟠 **高亮对照** — 原文和注音两侧同步高亮，汉字与读音一一对应
 - ✏️ **在线编辑** — 点击汉字即可修改读音，提交修正供社区投票
-- 📤 **多种导出** — TXT（原文+注音）、TXT（仅注音）、LRC（带时间戳时可用），词间自动空格分隔
+- 📤 **多种导出** — TXT（原文+注音）、TXT（仅注音）、LRC（带时间戳时可用）
+- 🔍 **多源歌词** — 网易云音乐 → LRCLIB → Genius 三级降级链，优先返回日文原词
+- 🔊 **多源音频** — 网易云 EAPI → YouTube 二级降级，覆盖版权保护歌曲
 
 
 ## 🚀 快速开始
@@ -45,13 +47,17 @@ npm run dev
 复制 `.env.example` 为 `.env.local`，按需填写：
 
 ```bash
-# 可选：Genius API token，用于扩展搜索结果
+# 可选：Genius API token，用于扩展歌词搜索与降级
 # 在 https://genius.com/api-clients 申请
 GENIUS_ACCESS_TOKEN=你的token
 
 # 可选：Supabase 数据库，用于社区推荐与投票功能
 NEXT_PUBLIC_SUPABASE_URL=你的supabase地址
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的supabase密钥
+
+# 以下为可选，代码内已有公开默认值：
+# EAPI_KEY           — 网易云 EAPI 加密密钥
+# YOUTUBE_API_KEY    — YouTube InnerTube API 密钥
 ```
 
 所有外部服务均为可选，不配置也能正常运行。
@@ -72,19 +78,26 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=你的supabase密钥
 ```
 src/
 ├── app/            # Next.js 页面与 API 路由
-│   └── api/        # 搜索、歌词、音频、推荐、投票接口
+│   └── api/
+│       ├── search/      # 多源歌曲搜索
+│       ├── lyrics/      # 歌词获取（降级链）
+│       ├── audio/       # 网易云 EAPI 音频代理
+│       │   └── youtube/ # YouTube 音频降级代理
+│       ├── corrections/ # 用户修正管理
+│       ├── recommendations/ # 社区推荐
+│       └── vote/        # 投票接口
 ├── components/
-│   ├── editor/     # 编辑面板、单词编辑器
+│   ├── editor/     # 编辑面板、单词编辑器、修正对话框
 │   ├── export/     # 导出按钮与格式处理
 │   ├── layout/     # 顶栏、播放器、主题提供者
 │   ├── lyrics/     # 原文面板、注音面板
-│   ├── search/     # 搜索框、模式选择、粘贴输入、ASCII 动画
+│   ├── search/     # 搜索框、模式选择、粘贴输入
 │   └── ui/         # 基础 UI 组件
 ├── hooks/          # 自定义 React hooks
-├── images/         # 图片资源（GIF 等）
 ├── lib/
-│   ├── lyrics-sources/  # 歌词源适配器（网易云、Genius、Lyrics.ovh）
+│   ├── lyrics-sources/  # 歌词源适配器（网易云、LRCLIB、Genius）
 │   ├── furigana.ts      # 日语引擎初始化、分词、转换
+│   ├── on-readings.ts   # 汉日音读字典（12,000+ 条目）
 │   ├── export.ts        # 导出功能
 │   └── supabase.ts      # Supabase 客户端
 ├── types/          # TypeScript 类型定义
@@ -94,9 +107,31 @@ src/
 ## 🎛️ 开发
 
 ```bash
-npm run dev      # 开发模式（Turbopack，自定义 server.js 禁用 bfcache）
+npm run dev      # 开发模式（自定义 server.js 禁用 bfcache）
 npm run build    # 生产构建
 npm run lint     # 代码检查
+```
+
+> **注意**：本地开发时 YouTube 音频源可能因网络限制不可用，部署到 Vercel 后恢复正常。
+
+## 🎵 歌词降级链
+
+```
+用户选歌
+  ├─ 网易云 GET API (Accept-Language: ja) → 假名密度评分选最优字段
+  ├─ 网易云 EAPI POST（绕过 uncollected/sgc 限制）
+  ├─ LRCLIB API（免费公开，覆盖 sgc 歌曲）
+  └─ Genius API（需配置 GENIUS_ACCESS_TOKEN）
+```
+
+## 🔊 音频降级链
+
+```
+用户选歌
+  ├─ 网易云 EAPI（999000 → 320000 → 128000 逐级降码率）
+  │   └─ freeTrialInfo 则拒绝 45s 试听
+  ├─ YouTube InnerTube（搜索 → 提取最高码率音频流）
+  └─ 网易云 outer/url（兜底）
 ```
 
 ## 👤 作者

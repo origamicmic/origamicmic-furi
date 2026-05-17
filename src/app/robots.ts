@@ -12,6 +12,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: "/api/",
       },
     ],
-    sitemap: "https://furi.tomori.fyi//sitemap.xml",
+    sitemap: "https://furi.tomori.fyi/sitemap.xml",
   }
 }

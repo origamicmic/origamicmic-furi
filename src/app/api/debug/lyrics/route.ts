@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server"
 
-const BROWSER_HEADERS: Record<string, string> = {
-  "Referer": "https://music.163.com",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-}
-
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return Response.json({ error: "Not available" }, { status: 404 })
+  }
+  const BROWSER_HEADERS: Record<string, string> = {
+    "Referer": "https://music.163.com",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  }
   const { searchParams } = new URL(request.url)
   const id = searchParams.get("id")
   if (!id || !/^\d+$/.test(id)) return Response.json({ error: "需要网易云歌曲ID" }, { status: 400 })
