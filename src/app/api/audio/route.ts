@@ -91,7 +91,19 @@ export async function GET(request: NextRequest) {
         if (song?.url && !song.freeTrialInfo) {
           const validatedUrl = song.url.replace(/^http:\/\//, "https://")
           if (isValidAudioUrl(validatedUrl)) {
-            return redirectToAudio(validatedUrl)
+            try {
+              // Single-hop probe: authenticate with CDN using correct Referer,
+              // then pass the resolved stream URL to the browser
+              const probe = await fetch(validatedUrl, {
+                redirect: "manual",
+                headers: UPSTREAM_HEADERS,
+                signal: AbortSignal.timeout(5000),
+              })
+              const target = [301, 302, 303, 307, 308].includes(probe.status)
+                ? probe.headers.get("location") || validatedUrl
+                : validatedUrl
+              if (isValidAudioUrl(target)) return redirectToAudio(target)
+            } catch {}
           }
         }
         if (song?.freeTrialInfo) eapiHadTrial = true
