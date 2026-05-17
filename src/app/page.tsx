@@ -192,8 +192,9 @@ export default function Home() {
           } catch {}
         }
         if (neteaseId) {
+          const q = encodeURIComponent(`${song.title} ${song.artist}`)
           setAudioUrl(`/api/audio?id=${neteaseId}`)
-          setAudioFallbackUrl(`https://music.163.com/song/media/outer/url?id=${neteaseId}`)
+          setAudioFallbackUrl(`/api/audio/youtube?q=${q}`)
           setAudioTitle(song.title)
           setAudioArtist(song.artist)
         }
