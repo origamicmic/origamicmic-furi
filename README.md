@@ -1,6 +1,6 @@
 # 📝 Origamicmic Furi
 
-> 日语歌词自动注音工具 —— 搜索、粘贴、注音、编辑、导出，一站式解决。
+> 日语歌词自动注音工具 —— 搜索、注音、编辑、导出，一站式解决。
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-1.0.0-blue" alt="version">
@@ -11,11 +11,8 @@
 ## ✨ 功能
 - 🇯🇵 **自动注音** — Kuromoji + Kuroshiro 引擎，汉字转平假名或罗马音
 - 🟠 **高亮对照** — 原文和注音两侧同步高亮，汉字与读音一一对应
-- ✏️ **在线编辑** — 点击汉字即可修改读音，提交修正供社区投票
+- ✏️ **在线编辑** — 点击汉字即可修改读音，提交修正供社区对照
 - 📤 **多种导出** — TXT（原文+注音）、TXT（仅注音）、LRC（带时间戳时可用）
-- 🔍 **多源歌词** — 网易云音乐 → LRCLIB → Genius 三级降级链，优先返回日文原词
-- 🔊 **多源音频** — 网易云 EAPI → YouTube 二级降级，覆盖版权保护歌曲
-
 
 ## 🚀 快速开始
 
@@ -55,7 +52,7 @@ GENIUS_ACCESS_TOKEN=你的token
 NEXT_PUBLIC_SUPABASE_URL=你的supabase地址
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的supabase密钥
 
-# 以下为可选，代码内已有公开默认值：
+# 以下为可选，代码内已有默认值：
 # EAPI_KEY           — 网易云 EAPI 加密密钥
 # YOUTUBE_API_KEY    — YouTube InnerTube API 密钥
 ```
@@ -110,28 +107,6 @@ src/
 npm run dev      # 开发模式（自定义 server.js 禁用 bfcache）
 npm run build    # 生产构建
 npm run lint     # 代码检查
-```
-
-> **注意**：本地开发时 YouTube 音频源可能因网络限制不可用，部署到 Vercel 后恢复正常。
-
-## 🎵 歌词降级链
-
-```
-用户选歌
-  ├─ 网易云 GET API (Accept-Language: ja) → 假名密度评分选最优字段
-  ├─ 网易云 EAPI POST（绕过 uncollected/sgc 限制）
-  ├─ LRCLIB API（免费公开，覆盖 sgc 歌曲）
-  └─ Genius API（需配置 GENIUS_ACCESS_TOKEN）
-```
-
-## 🔊 音频降级链
-
-```
-用户选歌
-  ├─ 网易云 EAPI（999000 → 320000 → 128000 逐级降码率）
-  │   └─ freeTrialInfo 则拒绝 45s 试听
-  ├─ YouTube InnerTube（搜索 → 提取最高码率音频流）
-  └─ 网易云 outer/url（兜底）
 ```
 
 ## 👤 作者

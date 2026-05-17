@@ -11,9 +11,11 @@ export function useSearch() {
   const [selectedSong, setSelectedSong] = useState<SongResult | null>(null)
   const [lyricsText, setLyricsText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isFetchingLyrics, setIsFetchingLyrics] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latestQueryRef = useRef("")
   const abortRef = useRef<AbortController | null>(null)
+  const searchDoneRef = useRef(0)
 
   const search = useCallback(async (q: string) => {
     if (!q || q.trim().length === 0) {
@@ -47,6 +49,7 @@ export function useSearch() {
       const data = await res.json()
       if (latestQueryRef.current !== queryKey) return
       setResults(data.songs ?? [])
+      if (data.songs?.length > 0) searchDoneRef.current++
       if (data.error) setError(data.error)
     } catch (e) {
       if ((e as Error).name === "AbortError") return
@@ -76,6 +79,7 @@ export function useSearch() {
   const selectSong = useCallback(async (song: SongResult): Promise<boolean> => {
     setSelectedSong(song)
     setError(null)
+    setIsFetchingLyrics(true)
 
     try {
       const res = await fetch("/api/lyrics", {
@@ -102,6 +106,8 @@ export function useSearch() {
     } catch {
       setError("获取歌词失败")
       return false
+    } finally {
+      setIsFetchingLyrics(false)
     }
   }, [])
 
@@ -123,10 +129,12 @@ export function useSearch() {
     query,
     results,
     isSearching,
+    isFetchingLyrics,
     lyricData,
     selectedSong,
     lyricsText,
     error,
+    searchDoneRef,
     setQuery,
     debouncedSearch,
     selectSong,

@@ -91,13 +91,7 @@ export async function GET(request: NextRequest) {
         if (song?.url && !song.freeTrialInfo) {
           const validatedUrl = song.url.replace(/^http:\/\//, "https://")
           if (isValidAudioUrl(validatedUrl)) {
-            try {
-              const final = await followRedirects(validatedUrl)
-              const ct = (final.headers.get("content-type") || "").toLowerCase()
-              if (ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")) {
-                return redirectToAudio(final.url)
-              }
-            } catch {}
+            return redirectToAudio(validatedUrl)
           }
         }
         if (song?.freeTrialInfo) eapiHadTrial = true

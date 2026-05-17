@@ -127,6 +127,11 @@ export default function Home() {
   useEffect(() => { loadCorrections() }, [loadCorrections])
 
   useEffect(() => {
+    const current = search.searchDoneRef.current
+    if (current > 0) setForceOpenSearch((n) => n + 1)
+  }, [search.searchDoneRef.current])
+
+  useEffect(() => {
     if (!search.lyricsText) return
     const text = search.lyricsText
     if (lastLyricsRef.current === text && lastModeRef.current === convertMode) return
@@ -245,6 +250,12 @@ export default function Home() {
             {initializing && (
               <div className="w-full rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary">
                 解析引擎初始化中...
+              </div>
+            )}
+
+            {search.isFetchingLyrics && (
+              <div className="w-full rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm text-primary">
+                正在获取歌词...
               </div>
             )}
 
