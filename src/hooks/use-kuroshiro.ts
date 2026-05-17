@@ -18,10 +18,13 @@ export function useKuroshiro() {
   const errorRef = useRef<string | null>(null)
   const initRef = useRef(false)
   const mounted = useRef(false)
+  const lastVerified = useRef(0)
 
   const ensureReady = useCallback(async (): Promise<boolean> => {
     if (engineReady) {
+      if (Date.now() - lastVerified.current < 30000) return true
       const alive = await isEngineAlive()
+      lastVerified.current = Date.now()
       if (!alive) {
         engineReady = false
         resetEngine()
@@ -43,6 +46,7 @@ export function useKuroshiro() {
       await initKuroshiro()
       if (!mounted.current) return false
       engineReady = true
+      lastVerified.current = Date.now()
       setIsReady(true)
       errorRef.current = null
       setError(null)
@@ -52,6 +56,15 @@ export function useKuroshiro() {
       const msg = (err as Error).message
       errorRef.current = msg
       setError(msg)
+      // Schedule one automatic retry after backoff (in case of transient dict load failures)
+      setTimeout(() => {
+        if (!mounted.current) return
+        forceKuroshiroReset()
+        initRef.current = false
+        setError(null)
+        errorRef.current = null
+        lastVerified.current = 0
+      }, 2500)
       return false
     } finally {
       initRef.current = false
@@ -63,6 +76,7 @@ export function useKuroshiro() {
 
   const retry = useCallback(() => {
     forceKuroshiroReset()
+    lastVerified.current = 0
     setIsReady(false)
     setError(null)
     errorRef.current = null

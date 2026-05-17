@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
 
   // Priority 1: EAPI (NetEase web player API — best song coverage)
   // Try bitrates from highest to lowest — some songs only have specific qualities
+  let eapiHadTrial = false
   for (const br of [999000, 320000, 128000]) {
     try {
       const params = eapiEncrypt("/api/song/enhance/player/url", {
@@ -99,9 +100,13 @@ export async function GET(request: NextRequest) {
             } catch {}
           }
         }
+        if (song?.freeTrialInfo) eapiHadTrial = true
       }
     } catch {}
   }
+
+  // Copyright-restricted: EAPI returned trial-only at all bitrates, skip outer/url (which serves 45s previews)
+  if (eapiHadTrial) return new Response(null, { status: 404 })
 
   // Priority 2-3: Legacy /song/media/outer/url
   for (const suffix of ["", ".mp3"]) {

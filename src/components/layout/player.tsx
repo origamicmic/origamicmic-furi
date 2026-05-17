@@ -156,7 +156,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const progress = duration > 0 ? (current / duration) * 100 : 0
 
   return (
-    <div className="flex flex-1 items-center gap-3 rounded-full bg-white/60 px-4 py-1.5 shadow-sm ring-1 ring-white/40 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10 max-w-sm">
+    <div className="flex flex-1 items-center gap-3 rounded-full bg-white/60 px-4 py-1.5 shadow-sm ring-1 ring-white/40 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10 min-w-[280px] max-w-md">
       <audio ref={audioRef} src={src} preload="metadata" />
       <button
         onClick={toggle}
@@ -172,11 +172,16 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
           <Play className="h-3.5 w-3.5" />
         )}
       </button>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[11px] font-medium leading-tight text-foreground/80">
-          {title}
-          <span className="ml-1 font-normal text-muted-foreground/50">- {artist}</span>
-        </p>
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="overflow-hidden whitespace-nowrap">
+          <span className="inline-block animate-[marquee_12s_linear_infinite] hover:[animation-play-state:paused] text-[11px] font-medium leading-tight text-foreground/80">
+            {title}
+            <span className="mx-2 font-normal text-muted-foreground/50">- {artist}</span>
+            <span className="inline-block w-6">&nbsp;</span>
+            {title}
+            <span className="mx-2 font-normal text-muted-foreground/50">- {artist}</span>
+          </span>
+        </div>
         <div className="mt-0.5 flex items-center gap-2">
           <div
             ref={barRef}
@@ -192,7 +197,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
               style={{ left: `calc(${progress}% - 6px)` }}
             />
           </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground/40">
+          <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0">
             {loading ? "--:--" : error ? "错误" : duration > 0 ? formatTime(current) : "--:--"}
           </span>
         </div>

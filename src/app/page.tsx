@@ -207,7 +207,7 @@ export default function Home() {
     updateToken(selectedEditWord.lineIndex, selectedEditWord.tokenId, reading)
   }
 
-  const hasLyrics = lines.length > 0 || search.lyricsText !== null
+  const hasLyrics = (lines.length > 0 || search.lyricsText !== null) && !kuroshiroError
 
   return (
       <div className="flex min-h-full flex-col bg-background">
@@ -268,6 +268,12 @@ export default function Home() {
             {isNarrow && audioUrl && (
               <div className="flex justify-center">
                 <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
+              </div>
+            )}
+            {kuroshiroError && (
+              <div className="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                解析引擎加载失败，请重试
+                <button onClick={() => { retry(); lastLyricsRef.current = "" }} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
             <div className={`flex items-center justify-between rounded-2xl px-5 py-2 ${FROSTED}`}>
