@@ -18,13 +18,10 @@ export function useKuroshiro() {
   const errorRef = useRef<string | null>(null)
   const initRef = useRef(false)
   const mounted = useRef(false)
-  const lastVerified = useRef(0)
 
   const ensureReady = useCallback(async (): Promise<boolean> => {
     if (engineReady) {
-      if (Date.now() - lastVerified.current < 30000) return true
       const alive = await isEngineAlive()
-      lastVerified.current = Date.now()
       if (!alive) {
         engineReady = false
         resetEngine()
@@ -46,7 +43,6 @@ export function useKuroshiro() {
       await initKuroshiro()
       if (!mounted.current) return false
       engineReady = true
-      lastVerified.current = Date.now()
       setIsReady(true)
       errorRef.current = null
       setError(null)
@@ -63,7 +59,6 @@ export function useKuroshiro() {
         initRef.current = false
         setError(null)
         errorRef.current = null
-        lastVerified.current = 0
       }, 2500)
       return false
     } finally {
@@ -76,7 +71,6 @@ export function useKuroshiro() {
 
   const retry = useCallback(() => {
     forceKuroshiroReset()
-    lastVerified.current = 0
     setIsReady(false)
     setError(null)
     errorRef.current = null

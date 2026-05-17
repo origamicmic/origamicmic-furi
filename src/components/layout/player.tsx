@@ -19,11 +19,14 @@ function formatTime(seconds: number): string {
 export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
+  const textRef = useRef<HTMLSpanElement>(null)
+  const trackRef = useRef<HTMLDivElement>(null)
   const [playing, setPlaying] = useState(false)
   const [current, setCurrent] = useState(0)
   const [duration, setDuration] = useState(0)
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [overflow, setOverflow] = useState(false)
   const dragging = useRef(false)
   const seeking = useRef(false)
   const dragPos = useRef(0)
@@ -33,6 +36,17 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const audioSrcRef = useRef(src)
 
   useEffect(() => { playingRef.current = playing }, [playing])
+
+  useEffect(() => {
+    const track = trackRef.current
+    const text = textRef.current
+    if (!track || !text) return
+    const check = () => setOverflow(text.scrollWidth > track.clientWidth)
+    const ro = new ResizeObserver(check)
+    ro.observe(track)
+    check()
+    return () => ro.disconnect()
+  }, [title, artist])
 
   useEffect(() => {
     fallbackTried.current = false
@@ -173,14 +187,19 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
         )}
       </button>
       <div className="min-w-0 flex-1 overflow-hidden">
-        <div className="overflow-hidden whitespace-nowrap">
-          <span className="inline-block animate-[marquee_12s_linear_infinite] hover:[animation-play-state:paused] text-[11px] font-medium leading-tight text-foreground/80">
-            {title}
-            <span className="mx-2 font-normal text-muted-foreground/50">- {artist}</span>
-            <span className="inline-block w-6">&nbsp;</span>
-            {title}
-            <span className="mx-2 font-normal text-muted-foreground/50">- {artist}</span>
-          </span>
+        <div ref={trackRef} className="overflow-hidden whitespace-nowrap">
+          {overflow ? (
+            <span className="inline-block animate-[marquee_12s_linear_infinite] hover:[animation-play-state:paused] text-[11px] font-medium leading-tight text-foreground/80">
+              <span ref={textRef}>{title}<span className="mx-2 font-normal text-muted-foreground/50">- {artist}</span></span>
+              <span className="inline-block w-6">&nbsp;</span>
+              <span>{title}<span className="mx-2 font-normal text-muted-foreground/50">- {artist}</span></span>
+            </span>
+          ) : (
+            <p className="truncate text-[11px] font-medium leading-tight text-foreground/80">
+              <span ref={textRef}>{title}</span>
+              <span className="ml-1 font-normal text-muted-foreground/50">- {artist}</span>
+            </p>
+          )}
         </div>
         <div className="mt-0.5 flex items-center gap-2">
           <div

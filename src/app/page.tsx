@@ -207,7 +207,7 @@ export default function Home() {
     updateToken(selectedEditWord.lineIndex, selectedEditWord.tokenId, reading)
   }
 
-  const hasLyrics = (lines.length > 0 || search.lyricsText !== null) && !kuroshiroError
+  const hasLyrics = lines.some(l => l.tokens.length > 0) && !kuroshiroError
 
   return (
       <div className="flex min-h-full flex-col bg-background">
