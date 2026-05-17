@@ -1,7 +1,7 @@
 import type { SongResult } from "@/types"
 import { GeniusSource } from "./genius"
 import { NeteaseSource } from "./netease"
-import { LyricsOvhSource } from "./lyricsovh"
+import { LrcLibSource } from "./lrclib"
 import type { LyricsSource } from "./types"
 
 const JAPANESE_REGEX = /[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9fff]/
@@ -11,7 +11,7 @@ function buildSources(geniusToken: string): LyricsSource[] {
   const s: LyricsSource[] = []
   if (geniusToken) s.push(new GeniusSource(geniusToken))
   s.push(new NeteaseSource())
-  s.push(new LyricsOvhSource())
+  s.push(new LrcLibSource())
   return s
 }
 
@@ -37,12 +37,12 @@ export async function searchAllSources(query: string, geniusToken: string): Prom
       if (sources[i].name === "netease") neteaseIdx = i
       if (sources[i].name === "genius") geniusIdx = i
     }
-    // Reorder: Netease first, Genius second, LyricsOvh last
+    // Reorder: Netease first, Genius second, LRCLIB last
     ordered = sourceResults.map(() => [] as SongResult[])
     if (neteaseIdx >= 0) ordered[0] = sourceResults[neteaseIdx]
     if (geniusIdx >= 0) ordered[1] = sourceResults[geniusIdx]
     ordered[ordered.length - 1] = sourceResults.find((_, i) =>
-      sources[i]?.name === "lyricsovh"
+      sources[i]?.name === "lrclib"
     ) ?? []
     // Filter Genius results to only include ones with Japanese title/artist
     if (geniusIdx >= 0) {
@@ -105,9 +105,9 @@ export async function fetchLyricsFromSource(song: SongResult, geniusToken: strin
     }
   }
 
-  // Fallback: try lyricsovh with artist|title
+  // Fallback: try lrclib with artist|title
   for (const source of sources) {
-    if (source.name === "lyricsovh") {
+    if (source.name === "lrclib") {
       try {
         const lyrics = await source.fetchLyrics(`${song.artist}|${song.title}`)
         if (KANA_REGEX.test(lyrics)) return lyrics

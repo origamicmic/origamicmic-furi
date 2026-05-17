@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "参数格式错误" }, { status: 400 })
     }
 
-    const ALLOWED_SOURCES = ["netease", "genius", "lyricsovh"]
+    const ALLOWED_SOURCES = ["netease", "genius", "lrclib", "lyricsovh"]
     if (!ALLOWED_SOURCES.includes(song.source)) {
       return Response.json({ error: "不支持的歌曲来源" }, { status: 400 })
     }
