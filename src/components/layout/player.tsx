@@ -51,8 +51,6 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   useEffect(() => {
     fallbackTried.current = false
     stallRetries.current = 0
-    setLoading(true)
-    setError(false)
     audioSrcRef.current = src
     const audio = audioRef.current
     if (!audio) return
@@ -79,9 +77,8 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       }
     }
     const onStalled = () => {
-      if (!playingRef.current || stallRetries.current >= 2) return
+      if (!playingRef.current || stallRetries.current >= 3) return
       stallRetries.current++
-      audio.load()
       audio.play().catch(() => {})
     }
     const onSeeking = () => { seeking.current = true }
@@ -157,7 +154,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     const onUp = () => {
       dragging.current = false
       const audio = audioRef.current
-      if (audio && dragPos.current > 0) {
+      if (audio && duration > 0 && dragPos.current > 0) {
         audio.currentTime = dragPos.current
       }
       window.removeEventListener("pointermove", onMove)

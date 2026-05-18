@@ -60,7 +60,7 @@ export function Header({ onHomeClick, audioUrl, audioTitle, audioArtist, audioFa
 
         {audioUrl && audioTitle && !hidePlayer && (
           <div className="absolute left-1/2 -translate-x-1/2">
-            <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
+            <Player key={audioUrl} src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
           </div>
         )}
 

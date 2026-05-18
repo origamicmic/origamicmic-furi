@@ -15,116 +15,150 @@ function eapiEncrypt(path: string, body: Record<string, unknown>): string {
   return encrypted.toUpperCase()
 }
 
-function isValidAudioUrl(url: string): boolean {
-  try {
-    const u = new URL(url)
-    return u.hostname.endsWith(".126.net") || u.hostname.endsWith(".163.com")
-  } catch {
-    return false
-  }
+function isAudioContentType(ct: string): boolean {
+  const t = ct.toLowerCase()
+  return (
+    t.includes("audio") ||
+    t.includes("mpeg") ||
+    t.includes("mp4") ||
+    t.includes("octet-stream")
+  )
 }
 
 const UPSTREAM_HEADERS: Record<string, string> = {
   "Referer": "https://music.163.com",
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
 
-async function followRedirects(url: string, timeout = 8000): Promise<Response> {
-  let current = await fetch(url, {
-    redirect: "manual",
-    headers: UPSTREAM_HEADERS,
-    signal: AbortSignal.timeout(timeout),
-  })
-  let redirects = 0
-  while ([301, 302, 303, 307, 308].includes(current.status) && redirects < 5) {
-    const location = current.headers.get("location")
-    if (!location) break
-    if (!isValidAudioUrl(location)) break
-    current = await fetch(location, {
-      redirect: "manual",
-      headers: UPSTREAM_HEADERS,
-      signal: AbortSignal.timeout(timeout),
-    })
-    redirects++
+async function streamFromCDN(
+  url: string,
+  request: NextRequest
+): Promise<Response | null> {
+  const fetchAttempt = async (
+    extraHeaders: Record<string, string> = {}
+  ): Promise<Response | null> => {
+    try {
+      const headers: Record<string, string> = { ...UPSTREAM_HEADERS, ...extraHeaders }
+      const range = request.headers.get("range")
+      if (range) headers["Range"] = range
+
+      const res = await fetch(url, {
+        headers,
+        redirect: "follow",
+        signal: AbortSignal.timeout(30000),
+      })
+
+      if (!res.ok) return null
+
+      const ct = (res.headers.get("content-type") || "").toLowerCase()
+      if (ct && !isAudioContentType(ct)) return null
+
+      const responseHeaders = new Headers()
+      responseHeaders.set("Content-Type", ct || "audio/mpeg")
+      responseHeaders.set("Accept-Ranges", "bytes")
+      responseHeaders.set("Cache-Control", "public, max-age=3600")
+      responseHeaders.set("Access-Control-Allow-Origin", "*")
+
+      if (res.status === 206) {
+        const cr = res.headers.get("content-range")
+        if (cr) responseHeaders.set("Content-Range", cr)
+        const cl = res.headers.get("content-length")
+        if (cl) responseHeaders.set("Content-Length", cl)
+      } else {
+        const cl = res.headers.get("content-length")
+        if (cl) responseHeaders.set("Content-Length", cl)
+      }
+
+      return new Response(res.body, {
+        status: res.status,
+        headers: responseHeaders,
+      })
+    } catch {
+      return null
+    }
   }
-  return current
+
+  const result = await fetchAttempt()
+  if (result) return result
+
+  return fetchAttempt({ Referer: "" })
 }
 
-function redirectToAudio(url: string): Response {
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: url.replace(/^http:\/\//, "https://"),
-      "Cache-Control": "no-cache",
-    },
-  })
-}
-
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const id = searchParams.get("id")
-  if (!id || !/^\d+$/.test(id)) return new Response(null, { status: 400 })
-
-  // Priority 1: EAPI (NetEase web player API — best song coverage)
-  // Try bitrates from highest to lowest — some songs only have specific qualities
-  let eapiHadTrial = false
+async function streamFromEAPI(
+  id: string,
+  request: NextRequest
+): Promise<Response | null> {
   for (const br of [999000, 320000, 128000]) {
     try {
       const params = eapiEncrypt("/api/song/enhance/player/url", {
         ids: `[${id}]`,
         br,
       })
-      const res = await fetch("https://interface3.music.163.com/eapi/song/enhance/player/url", {
-        method: "POST",
-        headers: {
-          ...UPSTREAM_HEADERS,
-          "Content-Type": "application/x-www-form-urlencoded",
-          "Cookie": "os=pc",
-        },
-        body: `params=${encodeURIComponent(params)}`,
-        signal: AbortSignal.timeout(8000),
-      })
-
-      if (res.ok) {
-        const data = await res.json()
-        const song = data.data?.[0]
-        if (song?.url && !song.freeTrialInfo) {
-          const validatedUrl = song.url.replace(/^http:\/\//, "https://")
-          if (isValidAudioUrl(validatedUrl)) {
-            try {
-              // Single-hop probe: authenticate with CDN using correct Referer,
-              // then pass the resolved stream URL to the browser
-              const probe = await fetch(validatedUrl, {
-                redirect: "manual",
-                headers: UPSTREAM_HEADERS,
-                signal: AbortSignal.timeout(5000),
-              })
-              const target = [301, 302, 303, 307, 308].includes(probe.status)
-                ? probe.headers.get("location") || validatedUrl
-                : validatedUrl
-              if (isValidAudioUrl(target)) return redirectToAudio(target)
-            } catch {}
-          }
+      const res = await fetch(
+        "https://interface3.music.163.com/eapi/song/enhance/player/url",
+        {
+          method: "POST",
+          headers: {
+            ...UPSTREAM_HEADERS,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": "os=pc",
+          },
+          body: `params=${encodeURIComponent(params)}`,
+          signal: AbortSignal.timeout(12000),
         }
-        if (song?.freeTrialInfo) eapiHadTrial = true
-      }
-    } catch {}
+      )
+
+      if (!res.ok) continue
+      const data = await res.json()
+      const song = data.data?.[0]
+      const hasTrial =
+        song.freeTrialInfo != null &&
+        typeof song.freeTrialInfo === "object" &&
+        !Array.isArray(song.freeTrialInfo) &&
+        Number((song.freeTrialInfo as Record<string, unknown>).end) > 0
+      if (!song?.url || hasTrial) continue
+
+      const audioUrl = song.url.replace(/^http:\/\//, "https://")
+      const result = await streamFromCDN(audioUrl, request)
+      if (result) return result
+    } catch {
+      continue
+    }
   }
+  return null
+}
 
-  // Copyright-restricted: EAPI returned trial-only at all bitrates, skip outer/url (which serves 45s previews)
-  if (eapiHadTrial) return new Response(null, { status: 404 })
-
-  // Priority 2-3: Legacy /song/media/outer/url
+async function streamFromLegacy(
+  id: string,
+  request: NextRequest
+): Promise<Response | null> {
   for (const suffix of ["", ".mp3"]) {
     try {
       const url = `https://music.163.com/song/media/outer/url?id=${id}${suffix}`
-      const res = await followRedirects(url)
-      const ct = (res.headers.get("content-type") || "").toLowerCase()
-      if (ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")) {
-        return redirectToAudio(res.url)
-      }
-    } catch {}
+      const result = await streamFromCDN(url, request)
+      if (result) return result
+    } catch {
+      continue
+    }
   }
+  return null
+}
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url)
+  const id = searchParams.get("id")
+  if (!id || !/^\d+$/.test(id)) {
+    return new Response(null, { status: 400 })
+  }
+
+  // Priority 1: EAPI
+  const eapiResult = await streamFromEAPI(id, request)
+  if (eapiResult) return eapiResult
+
+  // Priority 2: Legacy URL (even when EAPI returns freeTrialInfo, legacy may serve full audio)
+  const legacyResult = await streamFromLegacy(id, request)
+  if (legacyResult) return legacyResult
 
   return new Response(null, { status: 404 })
 }
@@ -132,7 +166,8 @@ export async function GET(request: NextRequest) {
 export async function OPTIONS(request: NextRequest) {
   const origin = request.headers.get("origin") || ""
   const host = request.headers.get("host") || ""
-  const allowed = origin && (origin.includes(host) || origin.endsWith(".vercel.app"))
+  const allowed =
+    origin && (origin.includes(host) || origin.endsWith(".vercel.app"))
   return new Response(null, {
     headers: {
       ...(allowed ? { "Access-Control-Allow-Origin": origin } : {}),

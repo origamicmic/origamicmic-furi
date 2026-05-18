@@ -285,7 +285,7 @@ export default function Home() {
           )}>
             {isNarrow && audioUrl && (
               <div className="flex justify-center">
-                <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
+                <Player key={audioUrl} src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
               </div>
             )}
             {kuroshiroError && (
