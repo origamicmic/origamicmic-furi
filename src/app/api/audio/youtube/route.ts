@@ -118,9 +118,9 @@ async function getAudioUrl(videoId: string): Promise<string | null> {
       signal,
     }).then((r) => r.text())
 
-    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*var\s+head/)
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]+?\});/)
     if (!match) {
-      console.warn("[fallback] ytInitialPlayerResponse not found in watch page")
+      console.warn(`[fallback] ytInitialPlayerResponse not found (html head: ${html.slice(0, 200)})`)
       return null
     }
     const data = JSON.parse(match[1]) as Record<string, unknown>
