@@ -116,54 +116,61 @@ async function streamFromEAPI(
   request: NextRequest
 ): Promise<Response | null> {
   for (const br of [320000, 128000, 999000]) {
-    try {
-      const params = eapiEncrypt("/api/song/enhance/player/url", {
-        ids: `[${id}]`,
-        br,
-      })
-      const res = await fetch(
-        "https://interface3.music.163.com/eapi/song/enhance/player/url",
-        {
-          method: "POST",
-          headers: {
-            ...UPSTREAM_HEADERS,
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Cookie": "os=pc",
-          },
-          body: `params=${encodeURIComponent(params)}`,
-          signal: AbortSignal.timeout(5000),
-        }
-      )
+    for (let retry = 0; retry < 2; retry++) {
+      try {
+        const params = eapiEncrypt("/api/song/enhance/player/url", {
+          ids: `[${id}]`,
+          br,
+        })
+        const res = await fetch(
+          "https://interface3.music.163.com/eapi/song/enhance/player/url",
+          {
+            method: "POST",
+            headers: {
+              ...UPSTREAM_HEADERS,
+              "Content-Type": "application/x-www-form-urlencoded",
+              "Cookie": "os=pc",
+            },
+            body: `params=${encodeURIComponent(params)}`,
+            signal: AbortSignal.timeout(10000),
+          }
+        )
 
-      if (!res.ok) {
-        console.warn(`[audio] EAPI HTTP ${res.status} for br=${br / 1000}k id=${id}`)
-        continue
-      }
-      const data = await res.json()
-      const song = data.data?.[0]
-      if (!song?.url) {
-        if (song?.freeTrialInfo != null) {
-          console.warn(`[audio] EAPI trial-only br=${br / 1000}k id=${id}`)
+        if (!res.ok) {
+          console.warn(`[audio] EAPI HTTP ${res.status} for br=${br / 1000}k id=${id}${retry > 0 ? ` retry=${retry}` : ""}`)
+          break
         }
-        continue
-      }
-      const hasTrial =
-        song.freeTrialInfo != null &&
-        typeof song.freeTrialInfo === "object" &&
-        !Array.isArray(song.freeTrialInfo) &&
-        Number((song.freeTrialInfo as Record<string, unknown>).end) > 0
-      if (hasTrial) {
-        console.warn(`[audio] EAPI trial-restricted br=${br / 1000}k id=${id}`)
-        continue
-      }
+        const data = await res.json()
+        const song = data.data?.[0]
+        if (!song?.url) {
+          if (song?.freeTrialInfo != null) {
+            console.warn(`[audio] EAPI trial-only br=${br / 1000}k id=${id}`)
+          } else {
+            console.warn(`[audio] EAPI no-url br=${br / 1000}k id=${id} code=${data.code} freeTrialInfo=${JSON.stringify(song?.freeTrialInfo)}`)
+          }
+          break
+        }
+        const hasTrial =
+          song.freeTrialInfo != null &&
+          typeof song.freeTrialInfo === "object" &&
+          !Array.isArray(song.freeTrialInfo) &&
+          Number((song.freeTrialInfo as Record<string, unknown>).end) > 0
+        if (hasTrial) {
+          console.warn(`[audio] EAPI trial-restricted br=${br / 1000}k id=${id}`)
+          break
+        }
 
-      const audioUrl = song.url.replace(/^http:\/\//, "https://")
-      const result = await streamFromCDN(audioUrl, request)
-      if (result) return result
-      console.warn(`[audio] CDN stream failed br=${br / 1000}k id=${id}`)
-    } catch (err) {
-      console.warn(`[audio] EAPI exception br=${br / 1000}k id=${id}: ${err instanceof Error ? err.message : String(err)}`)
-      continue
+        const audioUrl = song.url.replace(/^http:\/\//, "https://")
+        const result = await streamFromCDN(audioUrl, request)
+        if (result) return result
+        console.warn(`[audio] CDN stream failed br=${br / 1000}k id=${id}`)
+        break
+      } catch (err) {
+        console.warn(`[audio] EAPI exception br=${br / 1000}k id=${id}${retry > 0 ? ` retry=${retry}` : ""}: ${err instanceof Error ? err.message : String(err)}`)
+        if (retry < 1) {
+          await new Promise((r) => setTimeout(r, 400))
+        }
+      }
     }
   }
   return null

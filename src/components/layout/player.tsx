@@ -94,22 +94,29 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     const audio = audioRef.current
     if (!audio) return
 
-    if (playingRef.current) {
-      if (stallRetries.current < 3) {
-        stallRetries.current++
+    if (stallRetries.current < 3) {
+      stallRetries.current++
+      if (playingRef.current) {
         audio.play().catch(() => {})
       }
       return
     }
 
-    if (stallRetries.current < 3) {
-      stallRetries.current++
-      audio.play().catch(() => {})
+    // After 3 stall retries exhausted, try fallback if available
+    if (fallbackSrc && !fallbackTried.current) {
+      console.warn("[player] stalled too many times, switching to fallback")
+      fallbackTried.current = true
+      stallRetries.current = 0
+      setError(false)
+      setLoading(true)
+      audioSrcRef.current = fallbackSrc
+      audio.src = fallbackSrc
       return
     }
+
     setLoading(false)
     setError(true)
-  }, [])
+  }, [fallbackSrc])
 
   const onSeeking = useCallback(() => { seeking.current = true }, [])
 

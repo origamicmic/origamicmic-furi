@@ -4,6 +4,7 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  serverExternalPackages: ["undici"],
   async headers() {
     return [
       {

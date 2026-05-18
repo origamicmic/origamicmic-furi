@@ -205,12 +205,17 @@ export default function Home() {
             }
           } catch {}
         }
+        const q = encodeURIComponent(`${song.title} ${song.artist}`)
+        const soundcloudUrl = `/api/audio/youtube?q=${q}`
+        setAudioTitle(song.title)
+        setAudioArtist(song.artist)
+
         if (neteaseId) {
-          const q = encodeURIComponent(`${song.title} ${song.artist}`)
           setAudioUrl(`/api/audio?id=${neteaseId}`)
-          setAudioFallbackUrl(`/api/audio/youtube?q=${q}`)
-          setAudioTitle(song.title)
-          setAudioArtist(song.artist)
+          setAudioFallbackUrl(soundcloudUrl)
+        } else {
+          setAudioUrl(soundcloudUrl)
+          setAudioFallbackUrl(null)
         }
       } catch { /* no audio */ }
     },

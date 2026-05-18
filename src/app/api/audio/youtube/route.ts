@@ -1,29 +1,78 @@
 import { NextRequest } from "next/server"
+import { createRequire } from "node:module"
+
+const require = createRequire(import.meta.url)
+
+const SC_PROXY = (process.env.SC_PROXY || "").trim()
+
+const SC_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+const SC_API_HEADERS: Record<string, string> = {
+  "User-Agent": SC_UA,
+  "Accept": "application/json",
+  "Origin": "https://soundcloud.com",
+  "Referer": "https://soundcloud.com/",
+}
+
+const SC_FALLBACK_CLIENT_ID = ""
 
 let SC_CLIENT_ID = ""
 let SC_INIT_PROMISE: Promise<void> | null = null
+
+function scFetch(input: string, init?: RequestInit): Promise<Response> {
+  if (SC_PROXY) {
+    try {
+      const { ProxyAgent } = require("undici")
+      return fetch(input, { ...init, dispatcher: new ProxyAgent(SC_PROXY) } as RequestInit)
+    } catch (e) {
+      console.warn(`[fallback] sc proxy init failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  return fetch(input, init)
+}
+
+if (!SC_CLIENT_ID) {
+  console.warn(`[fallback] sc proxy ${SC_PROXY ? `enabled: ${SC_PROXY}` : "disabled (SC_PROXY not set)"}`)
+}
 
 async function ensureClientId() {
   if (SC_CLIENT_ID) return
   if (SC_INIT_PROMISE) return SC_INIT_PROMISE
   SC_INIT_PROMISE = (async () => {
-    const html = await fetch("https://soundcloud.com/discover", {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      },
-    }).then((r) => r.text())
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const html = await scFetch("https://soundcloud.com/discover", {
+          headers: { "User-Agent": SC_UA },
+          signal: AbortSignal.timeout(10000),
+        }).then((r) => r.text())
 
-    const match = html.match(/<script[^>]*src="(https:\/\/[^"]*sndcdn\.com\/[^"]*webpack\.js[^"]*)"[^>]*>/)
-    if (match) {
-      const js = await fetch(match[1], {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        },
-      }).then((r) => r.text())
-      const m = js.match(/client_id\s*:\s*"([a-zA-Z0-9]{32})"/)
-      if (m) SC_CLIENT_ID = m[1]
+        const scriptMatch = html.match(
+          /<script[^>]*src="(https:\/\/[^"]*sndcdn\.com\/[^"]*webpack[^"]*\.js[^"]*)"[^>]*>/,
+        )
+        if (scriptMatch) {
+          const js = await scFetch(scriptMatch[1], {
+            headers: { "User-Agent": SC_UA },
+            signal: AbortSignal.timeout(10000),
+          }).then((r) => r.text())
+          const m = js.match(/client_id\s*:\s*"([^"]+)"/)
+          if (m) {
+            SC_CLIENT_ID = m[1]
+            console.warn(`[fallback] sc client_id extracted on attempt ${attempt + 1}`)
+            return
+          }
+        }
+        console.warn(`[fallback] sc client_id extraction attempt ${attempt + 1} failed`)
+      } catch (err) {
+        console.warn(
+          `[fallback] sc client_id attempt ${attempt + 1} error: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1500))
+    }
+    if (SC_FALLBACK_CLIENT_ID) {
+      SC_CLIENT_ID = SC_FALLBACK_CLIENT_ID
+      console.warn("[fallback] sc using hardcoded fallback client_id")
     }
   })()
   await SC_INIT_PROMISE
@@ -31,8 +80,8 @@ async function ensureClientId() {
   if (!SC_CLIENT_ID) throw new Error("Failed to extract SoundCloud client_id")
 }
 
-const SEARCH_TIMEOUT = 6000
-const STREAM_TIMEOUT = 15000
+const SEARCH_TIMEOUT = 8000
+const STREAM_TIMEOUT = 60000
 
 function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
   const reader = body!.getReader()
@@ -56,12 +105,8 @@ async function resolveAudioUrl(query: string): Promise<string | null> {
   try {
     const searchUrl =
       `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=3&client_id=${SC_CLIENT_ID}`
-    const searchRes = await fetch(searchUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-      },
+    const searchRes = await scFetch(searchUrl, {
+      headers: SC_API_HEADERS,
       signal,
     })
     if (!searchRes.ok) {
@@ -89,11 +134,8 @@ async function resolveAudioUrl(query: string): Promise<string | null> {
     ) || transcodings[0]
     const transcodeUrl = String(prog.url || "")
 
-    const transcodeRes = await fetch(`${transcodeUrl}?client_id=${SC_CLIENT_ID}`, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      },
+    const transcodeRes = await scFetch(`${transcodeUrl}?client_id=${SC_CLIENT_ID}`, {
+      headers: SC_API_HEADERS,
       signal: AbortSignal.timeout(SEARCH_TIMEOUT),
     })
     if (!transcodeRes.ok) {
@@ -120,13 +162,14 @@ async function streamAudio(
 ): Promise<Response | null> {
   try {
     const reqHeaders: Record<string, string> = {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "User-Agent": SC_UA,
+      "Origin": "https://soundcloud.com",
+      "Referer": "https://soundcloud.com/",
     }
     const range = request.headers.get("range")
     if (range) reqHeaders["Range"] = range
 
-    const res = await fetch(audioUrl, {
+    const res = await scFetch(audioUrl, {
       headers: reqHeaders,
       redirect: "follow",
       signal: AbortSignal.timeout(STREAM_TIMEOUT),
