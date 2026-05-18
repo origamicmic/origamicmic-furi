@@ -34,7 +34,6 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const stallRetries = useRef(0)
   const playingRef = useRef(false)
   const audioSrcRef = useRef(src)
-  const switching = useRef(false)
 
   useEffect(() => { playingRef.current = playing }, [playing])
 
@@ -74,18 +73,15 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const onErr = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
-    if (switching.current) return
     setLoading(false)
     if (fallbackSrc && !fallbackTried.current) {
       console.warn("[player] primary failed, switching to fallback")
       fallbackTried.current = true
-      switching.current = true
       stallRetries.current = 0
       setError(false)
       audioSrcRef.current = fallbackSrc
       audio.src = fallbackSrc
       setLoading(true)
-      setTimeout(() => { switching.current = false }, 800)
     } else {
       console.warn("[player] playback failed, no fallback available or already tried")
       setError(true)
@@ -109,17 +105,14 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       audio.play().catch(() => {})
       return
     }
-    if (switching.current) return
     console.warn("[player] stalled during load, switching to fallback")
     if (fallbackSrc && !fallbackTried.current) {
       fallbackTried.current = true
-      switching.current = true
       stallRetries.current = 0
       setError(false)
       audioSrcRef.current = fallbackSrc
       audio.src = fallbackSrc
       setLoading(true)
-      setTimeout(() => { switching.current = false }, 800)
     } else {
       setLoading(false)
       setError(true)
@@ -150,13 +143,11 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       setLoading(false)
       if (fallbackSrc && !fallbackTried.current) {
         fallbackTried.current = true
-        switching.current = true
         stallRetries.current = 0
         setError(false)
         audioSrcRef.current = fallbackSrc
         audio.src = fallbackSrc
         setLoading(true)
-        setTimeout(() => { switching.current = false }, 800)
       } else {
         setError(true)
       }
