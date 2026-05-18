@@ -48,6 +48,55 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     return () => ro.disconnect()
   }, [title, artist])
 
+  const onTime = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (!dragging.current && !seeking.current) setCurrent(audio.currentTime)
+  }, [])
+
+  const onLoaded = useCallback(() => {
+    setLoading(false)
+    setError(false)
+  }, [])
+
+  const onDur = useCallback(() => {
+    const audio = audioRef.current
+    if (audio) setDuration(audio.duration || 0)
+  }, [])
+
+  const onEnd = useCallback(() => setPlaying(false), [])
+
+  const onErr = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    setLoading(false)
+    if (fallbackSrc && !fallbackTried.current) {
+      fallbackTried.current = true
+      audioSrcRef.current = fallbackSrc
+      audio.src = fallbackSrc
+      audio.load()
+      setLoading(true)
+    } else {
+      setError(true)
+    }
+  }, [fallbackSrc])
+
+  const onStalled = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (!playingRef.current || stallRetries.current >= 3) return
+    stallRetries.current++
+    audio.play().catch(() => {})
+  }, [])
+
+  const onSeeking = useCallback(() => { seeking.current = true }, [])
+
+  const onSeeked = useCallback(() => {
+    seeking.current = false
+    const audio = audioRef.current
+    if (audio) setCurrent(audio.currentTime)
+  }, [])
+
   useEffect(() => {
     fallbackTried.current = false
     stallRetries.current = 0
@@ -55,16 +104,12 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     const audio = audioRef.current
     if (!audio) return
 
-    const onTime = () => {
-      if (!dragging.current && !seeking.current) setCurrent(audio.currentTime)
-    }
-    const onLoaded = () => {
+    if (audio.readyState >= 1) {
       setLoading(false)
       setError(false)
+      if (audio.duration && !isNaN(audio.duration)) setDuration(audio.duration)
     }
-    const onDur = () => setDuration(audio.duration || 0)
-    const onEnd = () => setPlaying(false)
-    const onErr = () => {
+    if (audio.error || audio.networkState === 3) {
       setLoading(false)
       if (fallbackSrc && !fallbackTried.current) {
         fallbackTried.current = true
@@ -75,37 +120,6 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       } else {
         setError(true)
       }
-    }
-    const onStalled = () => {
-      if (!playingRef.current || stallRetries.current >= 3) return
-      stallRetries.current++
-      audio.play().catch(() => {})
-    }
-    const onSeeking = () => { seeking.current = true }
-    const onSeeked = () => {
-      seeking.current = false
-      setCurrent(audio.currentTime)
-    }
-
-    audio.addEventListener("timeupdate", onTime)
-    audio.addEventListener("loadedmetadata", onLoaded)
-    audio.addEventListener("loadeddata", onLoaded)
-    audio.addEventListener("durationchange", onDur)
-    audio.addEventListener("ended", onEnd)
-    audio.addEventListener("error", onErr)
-    audio.addEventListener("stalled", onStalled)
-    audio.addEventListener("seeking", onSeeking)
-    audio.addEventListener("seeked", onSeeked)
-    return () => {
-      audio.removeEventListener("timeupdate", onTime)
-      audio.removeEventListener("loadedmetadata", onLoaded)
-      audio.removeEventListener("loadeddata", onLoaded)
-      audio.removeEventListener("durationchange", onDur)
-      audio.removeEventListener("ended", onEnd)
-      audio.removeEventListener("error", onErr)
-      audio.removeEventListener("stalled", onStalled)
-      audio.removeEventListener("seeking", onSeeking)
-      audio.removeEventListener("seeked", onSeeked)
     }
   }, [src, fallbackSrc])
 
@@ -169,7 +183,20 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
 
   return (
     <div className="flex flex-1 items-center gap-3 rounded-full bg-white/60 px-4 py-1.5 shadow-sm ring-1 ring-white/40 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10 min-w-[280px] max-w-md">
-      <audio ref={audioRef} src={src} preload="metadata" />
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onTimeUpdate={onTime}
+        onLoadedMetadata={onLoaded}
+        onLoadedData={onLoaded}
+        onDurationChange={onDur}
+        onEnded={onEnd}
+        onError={onErr}
+        onStalled={onStalled}
+        onSeeking={onSeeking}
+        onSeeked={onSeeked}
+      />
       <button
         onClick={toggle}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-transform hover:scale-105"
