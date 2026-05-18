@@ -3,7 +3,12 @@ import { NextRequest } from "next/server"
 const INVIDIOUS_INSTANCES = [
   "https://inv.nadeko.net",
   "https://inv.tux.pizza",
+  "https://invidious.privacyredirect.com",
 ]
+
+const SEARCH_TIMEOUT = 5000
+const VIDEO_TIMEOUT = 5000
+const STREAM_TIMEOUT = 15000
 
 function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
   const reader = body!.getReader()
@@ -22,35 +27,51 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
 }
 
 async function searchInvidious(query: string, instance: string): Promise<string | null> {
+  const url = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`
   try {
-    const url = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
-    if (!res.ok) return null
+    const res = await fetch(url, { signal: AbortSignal.timeout(SEARCH_TIMEOUT) })
+    if (!res.ok) {
+      console.warn(`[fallback] search ${instance} HTTP ${res.status}`)
+      return null
+    }
     const data = await res.json()
     const results = Array.isArray(data) ? data : []
     for (const item of results) {
       if (item.videoId) return item.videoId as string
     }
+    console.warn(`[fallback] search ${instance} no results`)
     return null
-  } catch {
+  } catch (err) {
+    console.warn(`[fallback] search ${instance} error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }
 
 async function getAudioUrl(videoId: string, instance: string): Promise<string | null> {
+  const url = `${instance}/api/v1/videos/${videoId}`
   try {
-    const url = `${instance}/api/v1/videos/${videoId}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
-    if (!res.ok) return null
+    const res = await fetch(url, { signal: AbortSignal.timeout(VIDEO_TIMEOUT) })
+    if (!res.ok) {
+      console.warn(`[fallback] video ${instance} HTTP ${res.status}`)
+      return null
+    }
     const data = await res.json()
     const formats = data.adaptiveFormats || data.formatStreams || []
     const audio = formats.find(
       (f: Record<string, unknown>) =>
         typeof f.type === "string" && f.type.startsWith("audio/")
     )
-    if (audio && typeof audio.url === "string") return audio.url as string
-    return null
-  } catch {
+    if (!audio) {
+      console.warn(`[fallback] video ${instance} no audio format in ${formats.length} formats`)
+      return null
+    }
+    if (typeof audio.url !== "string") {
+      console.warn(`[fallback] video ${instance} audio url missing`)
+      return null
+    }
+    return audio.url as string
+  } catch (err) {
+    console.warn(`[fallback] video ${instance} error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }
@@ -60,8 +81,12 @@ async function resolveAudioUrl(query: string): Promise<string | null> {
     const videoId = await searchInvidious(query, instance)
     if (!videoId) continue
     const audioUrl = await getAudioUrl(videoId, instance)
-    if (audioUrl) return audioUrl
+    if (audioUrl) {
+      console.warn(`[fallback] resolved ${instance} -> ${audioUrl.slice(0, 80)}`)
+      return audioUrl
+    }
   }
+  console.warn(`[fallback] all ${INVIDIOUS_INSTANCES.length} instances failed`)
   return null
 }
 
@@ -73,6 +98,8 @@ async function streamAudio(
     const reqHeaders: Record<string, string> = {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Referer": "https://www.youtube.com/",
+      "Origin": "https://www.youtube.com",
     }
     const range = request.headers.get("range")
     if (range) reqHeaders["Range"] = range
@@ -80,10 +107,13 @@ async function streamAudio(
     const res = await fetch(audioUrl, {
       headers: reqHeaders,
       redirect: "follow",
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(STREAM_TIMEOUT),
     })
 
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.warn(`[fallback] stream HTTP ${res.status} for ${audioUrl.slice(0, 80)}`)
+      return null
+    }
 
     const rawCt = res.headers.get("content-type") || ""
     const ct = rawCt.split(";")[0].trim()
@@ -107,7 +137,8 @@ async function streamAudio(
       status: res.status,
       headers: responseHeaders,
     })
-  } catch {
+  } catch (err) {
+    console.warn(`[fallback] stream error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }

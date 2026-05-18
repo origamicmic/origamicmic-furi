@@ -73,6 +73,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const onErr = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
+    console.warn(`[player] error code=${audio.error?.code} networkState=${audio.networkState}`)
     setLoading(false)
     if (fallbackSrc && !fallbackTried.current) {
       console.warn("[player] primary failed, switching to fallback")
