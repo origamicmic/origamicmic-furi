@@ -164,6 +164,10 @@ export default function Home() {
 
   const handleSelectSong = useCallback(
     async (song: { id: string; title: string; artist: string; source: string }) => {
+      setAudioUrl(null)
+      setAudioFallbackUrl(null)
+      setAudioTitle("")
+      setAudioArtist("")
       const key = `${song.source}-${song.id}`
       if (noLyricsSongs.has(key)) {
         search.setError("该歌曲没有歌词（可能是纯音乐）")
@@ -193,7 +197,12 @@ export default function Home() {
               s.source === "netease" &&
               (hasSubstringMatch(s.title, song.title) || hasSubstringMatch(s.title, jpTitle))
             )
-            if (match) neteaseId = match.id
+            if (match) {
+              neteaseId = match.id
+            } else {
+              const first = (d.songs ?? []).find((s: { source: string }) => s.source === "netease")
+              if (first) neteaseId = first.id
+            }
           } catch {}
         }
         if (neteaseId) {
