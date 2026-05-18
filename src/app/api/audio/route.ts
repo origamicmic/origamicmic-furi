@@ -31,6 +31,7 @@ const UPSTREAM_HEADERS: Record<string, string> = {
   "Referer": "https://music.163.com",
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "X-Real-IP": process.env.CN_PROXY_IP || "118.88.88.88",
 }
 
 function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
