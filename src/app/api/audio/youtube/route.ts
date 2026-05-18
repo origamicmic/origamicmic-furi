@@ -86,6 +86,22 @@ async function getAudioStream(videoId: string): Promise<string | null> {
   return null
 }
 
+function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
+  const reader = body!.getReader()
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) { controller.close() }
+        else { controller.enqueue(value) }
+      } catch {
+        controller.close()
+      }
+    },
+    cancel() { reader.cancel().catch(() => {}) },
+  })
+}
+
 async function streamAudio(
   audioUrl: string,
   request: NextRequest
@@ -110,7 +126,7 @@ async function streamAudio(
     const responseHeaders = new Headers()
     responseHeaders.set(
       "Content-Type",
-      res.headers.get("content-type") || "audio/mp4"
+      res.headers.get("content-type") || "application/octet-stream"
     )
     responseHeaders.set("Accept-Ranges", "bytes")
     responseHeaders.set("Cache-Control", "public, max-age=3600")
@@ -126,7 +142,7 @@ async function streamAudio(
       if (cl) responseHeaders.set("Content-Length", cl)
     }
 
-    return new Response(res.body, {
+    return new Response(pumpStream(res.body), {
       status: res.status,
       headers: responseHeaders,
     })

@@ -19,8 +19,10 @@ function isAudioContentType(ct: string): boolean {
   const t = ct.toLowerCase()
   return (
     t.includes("audio") ||
+    t.includes("video") ||
     t.includes("mpeg") ||
     t.includes("mp4") ||
+    t.includes("webm") ||
     t.includes("octet-stream")
   )
 }
@@ -29,6 +31,22 @@ const UPSTREAM_HEADERS: Record<string, string> = {
   "Referer": "https://music.163.com",
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+}
+
+function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
+  const reader = body!.getReader()
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) { controller.close() }
+        else { controller.enqueue(value) }
+      } catch {
+        controller.close()
+      }
+    },
+    cancel() { reader.cancel().catch(() => {}) },
+  })
 }
 
 async function streamFromCDN(
@@ -52,10 +70,13 @@ async function streamFromCDN(
       if (!res.ok) return null
 
       const ct = (res.headers.get("content-type") || "").toLowerCase()
-      if (ct && !isAudioContentType(ct)) return null
+      if (ct && !isAudioContentType(ct)) {
+        console.warn(`[audio] unexpected content-type: "${ct}" for ${url.slice(0, 80)}`)
+        return null
+      }
 
       const responseHeaders = new Headers()
-      responseHeaders.set("Content-Type", ct || "audio/mpeg")
+      responseHeaders.set("Content-Type", ct || "application/octet-stream")
       responseHeaders.set("Accept-Ranges", "bytes")
       responseHeaders.set("Cache-Control", "public, max-age=3600")
       responseHeaders.set("Access-Control-Allow-Origin", "*")
@@ -70,7 +91,7 @@ async function streamFromCDN(
         if (cl) responseHeaders.set("Content-Length", cl)
       }
 
-      return new Response(res.body, {
+      return new Response(pumpStream(res.body), {
         status: res.status,
         headers: responseHeaders,
       })

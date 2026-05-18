@@ -118,7 +118,8 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       setLoading(true)
       fallbackTried.current = false
       stallRetries.current = 0
-      audio.src = audioSrcRef.current
+      audioSrcRef.current = src
+      audio.src = src
       audio.load()
       audio.play().then(() => setPlaying(true)).catch(() => setError(true))
       return
@@ -132,7 +133,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
         setLoading(false)
       })
     }
-  }, [loading, error, playing])
+  }, [loading, error, playing, src])
 
   const calcPosition = useCallback((clientX: number): number => {
     const bar = barRef.current
