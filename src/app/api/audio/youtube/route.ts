@@ -2,7 +2,6 @@ import { NextRequest } from "next/server"
 
 let YT_KEY = ""
 let YT_WEB_VERSION = ""
-let YT_IOS_VERSION = ""
 let YT_KEY_PROMISE: Promise<void> | null = null
 
 async function ensureKey() {
@@ -21,17 +20,6 @@ async function ensureKey() {
 
     const webMatch = html.match(/"INNERTUBE_CLIENT_VERSION":"(\d+\.\d+\.\d+)"/)
     if (webMatch) YT_WEB_VERSION = webMatch[1]
-
-    const iosMatch = html.match(/"INNERTUBE_CLIENT_VERSION":"([\d.]+)"[^}]*"INNERTUBE_CONTEXT_CLIENT_NAME":"IOS"/)
-    if (!iosMatch) {
-      const m = html.match(/"INNERTUBE_CONTEXT_CLIENT_NAME":"IOS"[^}]*?"INNERTUBE_CLIENT_VERSION":"([\d.]+)"/)
-      if (m) YT_IOS_VERSION = m[1]
-    } else {
-      YT_IOS_VERSION = iosMatch[1]
-    }
-    if (!YT_IOS_VERSION && /"INNERTUBE_CLIENT_VERSION":"(\d{2}\.\d{2}\.\d+\.\d+)"/.test(html)) {
-      YT_IOS_VERSION = html.match(/"INNERTUBE_CLIENT_VERSION":"(\d{2}\.\d{2}\.\d+\.\d+)"/)?.[1] ?? ""
-    }
   })()
   await YT_KEY_PROMISE
   YT_KEY_PROMISE = null
@@ -122,17 +110,13 @@ async function getAudioUrl(videoId: string): Promise<string | null> {
   await ensureKey()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
-    const data = await ytFetch("youtubei/v1/player?key=" + YT_KEY, {
+    const data = await ytFetch("youtubei/v1/player", {
       context: {
         client: {
           hl: "ja",
           gl: "JP",
-          clientName: "IOS",
-          clientVersion: YT_IOS_VERSION || "19.29.1",
-          deviceMake: "Apple",
-          deviceModel: "iPhone16,2",
-          osName: "iOS",
-          osVersion: "17.5.1.21F90",
+          clientName: "WEB",
+          clientVersion: YT_WEB_VERSION || "2.20250518.00.00",
         },
       },
       videoId,
