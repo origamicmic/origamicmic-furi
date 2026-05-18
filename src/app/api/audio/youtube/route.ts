@@ -115,20 +115,23 @@ async function getAudioUrl(videoId: string): Promise<string | null> {
         client: {
           hl: "ja",
           gl: "JP",
-          clientName: "WEB",
-          clientVersion: YT_WEB_VERSION || "2.20250518.00.00",
+          clientName: "ANDROID",
+          clientVersion: "19.44.33",
+          androidSdkVersion: 33,
         },
       },
       videoId,
       contentCheckOk: true,
       racyCheckOk: true,
     }, signal)
-    const formats = (data as Record<string, unknown>).streamingData?.adaptiveFormats || []
+    const sd = (data as Record<string, unknown>).streamingData as Record<string, unknown> | undefined
+    const formats = (sd?.adaptiveFormats || sd?.formats || []) as Record<string, unknown>[]
     const audio = formats.find(
       (f: Record<string, unknown>) => typeof f.mimeType === "string" && f.mimeType.startsWith("audio/") && f.url
     )
     if (!audio) {
-      console.warn(`[fallback] player: no audio in ${formats.length} formats`)
+      const keys = data ? Object.keys(data).join(",") : "null"
+      console.warn(`[fallback] player: no audio in ${formats.length}/${keys}`)
       return null
     }
     console.warn(`[fallback] audio: ${audio.mimeType} ${audio.bitrate}bps`)
