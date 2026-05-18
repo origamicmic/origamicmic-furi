@@ -3,7 +3,6 @@ import { NextRequest } from "next/server"
 const INVIDIOUS_INSTANCES = [
   "https://inv.nadeko.net",
   "https://inv.tux.pizza",
-  "https://invidious.privacyredirect.com",
 ]
 
 function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
@@ -25,7 +24,7 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
 async function searchInvidious(query: string, instance: string): Promise<string | null> {
   try {
     const url = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`
-    const res = await fetch(url, { signal: AbortSignal.timeout(4000) })
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) return null
     const data = await res.json()
     const results = Array.isArray(data) ? data : []
@@ -41,7 +40,7 @@ async function searchInvidious(query: string, instance: string): Promise<string 
 async function getAudioUrl(videoId: string, instance: string): Promise<string | null> {
   try {
     const url = `${instance}/api/v1/videos/${videoId}`
-    const res = await fetch(url, { signal: AbortSignal.timeout(4000) })
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
     if (!res.ok) return null
     const data = await res.json()
     const formats = data.adaptiveFormats || data.formatStreams || []
