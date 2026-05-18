@@ -69,9 +69,10 @@ async function streamFromCDN(
 
       if (!res.ok) return null
 
-      const ct = (res.headers.get("content-type") || "").toLowerCase()
+      const rawCt = (res.headers.get("content-type") || "").toLowerCase()
+      const ct = rawCt.split(";")[0].trim()
       if (ct && !isAudioContentType(ct)) {
-        console.warn(`[audio] unexpected content-type: "${ct}" for ${url.slice(0, 80)}`)
+        console.warn(`[audio] unexpected content-type: "${rawCt}" for ${url.slice(0, 80)}`)
         return null
       }
 

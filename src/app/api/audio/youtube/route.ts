@@ -123,10 +123,12 @@ async function streamAudio(
 
     if (!res.ok) return null
 
+    const rawCt = res.headers.get("content-type") || ""
+    const ct = rawCt.split(";")[0].trim()
     const responseHeaders = new Headers()
     responseHeaders.set(
       "Content-Type",
-      res.headers.get("content-type") || "application/octet-stream"
+      ct || "application/octet-stream"
     )
     responseHeaders.set("Accept-Ranges", "bytes")
     responseHeaders.set("Cache-Control", "public, max-age=3600")

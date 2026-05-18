@@ -38,10 +38,6 @@ const nextConfig: NextConfig = {
         source: "/(.*)",
         headers: [
           {
-            key: "Cache-Control",
-            value: "no-store",
-          },
-          {
             key: "Content-Security-Policy",
             value: "upgrade-insecure-requests",
           },
