@@ -135,20 +135,34 @@ async function streamFromEAPI(
         }
       )
 
-      if (!res.ok) continue
+      if (!res.ok) {
+        console.warn(`[audio] EAPI HTTP ${res.status} for br=${br / 1000}k id=${id}`)
+        continue
+      }
       const data = await res.json()
       const song = data.data?.[0]
+      if (!song?.url) {
+        if (song?.freeTrialInfo != null) {
+          console.warn(`[audio] EAPI trial-only br=${br / 1000}k id=${id}`)
+        }
+        continue
+      }
       const hasTrial =
         song.freeTrialInfo != null &&
         typeof song.freeTrialInfo === "object" &&
         !Array.isArray(song.freeTrialInfo) &&
         Number((song.freeTrialInfo as Record<string, unknown>).end) > 0
-      if (!song?.url || hasTrial) continue
+      if (hasTrial) {
+        console.warn(`[audio] EAPI trial-restricted br=${br / 1000}k id=${id}`)
+        continue
+      }
 
       const audioUrl = song.url.replace(/^http:\/\//, "https://")
       const result = await streamFromCDN(audioUrl, request)
       if (result) return result
-    } catch {
+      console.warn(`[audio] CDN stream failed br=${br / 1000}k id=${id}`)
+    } catch (err) {
+      console.warn(`[audio] EAPI exception br=${br / 1000}k id=${id}: ${err instanceof Error ? err.message : String(err)}`)
       continue
     }
   }

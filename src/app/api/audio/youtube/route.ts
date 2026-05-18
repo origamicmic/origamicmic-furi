@@ -1,18 +1,29 @@
 import { NextRequest } from "next/server"
+import { Innertube, UniversalCache } from "youtubei.js"
 
-const INVIDIOUS_INSTANCES = [
-  "https://inv.thepixora.com",
-  "https://yt.chocolatemoo53.com",
-  "https://invidious.nerdvpn.de",
-]
-
-const PIPED_INSTANCES = [
-  "https://pipedapi.syncpundit.io",
-]
-
-const SEARCH_TIMEOUT = 5000
-const VIDEO_TIMEOUT = 5000
+const SEARCH_TIMEOUT = 8000
 const STREAM_TIMEOUT = 15000
+
+let yt: Innertube | null = null
+let ytInit: Promise<Innertube> | null = null
+
+function getInnertube(): Promise<Innertube> {
+  if (yt) return Promise.resolve(yt)
+  if (!ytInit) {
+    ytInit = Innertube.create({ cache: new UniversalCache(false) })
+      .then((instance) => {
+        yt = instance
+        ytInit = null
+        return instance
+      })
+      .catch((err) => {
+        ytInit = null
+        console.warn("[fallback] Innertube.create failed:", err instanceof Error ? err.message : String(err))
+        throw err
+      })
+  }
+  return ytInit
+}
 
 function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
   const reader = body!.getReader()
@@ -30,137 +41,41 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
   })
 }
 
-async function searchInvidious(query: string, instance: string): Promise<{ videoId: string } | null> {
-  const url = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(SEARCH_TIMEOUT) })
-    if (!res.ok) {
-      console.warn(`[fallback] search ${instance} HTTP ${res.status}`)
-      return null
-    }
-    const data = await res.json()
-    const results = Array.isArray(data) ? data : []
-    for (const item of results) {
-      if (item.videoId) return { videoId: item.videoId as string }
-    }
-    console.warn(`[fallback] search ${instance} no results`)
-    return null
-  } catch (err) {
-    console.warn(`[fallback] search ${instance} error: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-async function getInvidiousProxyUrl(videoId: string, instance: string): Promise<string | null> {
-  const url = `${instance}/api/v1/videos/${videoId}`
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(VIDEO_TIMEOUT) })
-    if (!res.ok) {
-      console.warn(`[fallback] video ${instance} HTTP ${res.status}`)
-      return null
-    }
-    const data = await res.json()
-    const formats = data.adaptiveFormats || []
-    const audio = formats.find(
-      (f: Record<string, unknown>) =>
-        typeof f.type === "string" && f.type.startsWith("audio/")
-    )
-    if (!audio || typeof audio.itag !== "number") {
-      console.warn(`[fallback] video ${instance} no audio itag in ${formats.length} formats`)
-      return null
-    }
-    return `${instance}/latest_version?id=${videoId}&itag=${audio.itag}&local=true`
-  } catch (err) {
-    console.warn(`[fallback] video ${instance} error: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-async function resolveFromInvidious(query: string): Promise<string | null> {
-  for (const instance of INVIDIOUS_INSTANCES) {
-    const result = await searchInvidious(query, instance)
-    if (!result) continue
-    const proxyUrl = await getInvidiousProxyUrl(result.videoId, instance)
-    if (proxyUrl) {
-      console.warn(`[fallback] resolved invidious ${instance}`)
-      return proxyUrl
-    }
-  }
-  return null
-}
-
-async function searchPiped(query: string, instance: string): Promise<{ videoId: string } | null> {
-  const url = `${instance}/search?q=${encodeURIComponent(query)}&filter=music_songs`
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(SEARCH_TIMEOUT) })
-    if (!res.ok) {
-      console.warn(`[fallback] piped search ${instance} HTTP ${res.status}`)
-      return null
-    }
-    const data = await res.json()
-    const items = data.items || []
-    for (const item of items) {
-      if (item.url) {
-        const m = String(item.url).match(/[?&]v=([\w-]+)/)
-        if (m) return { videoId: m[1] }
-      }
-    }
-    console.warn(`[fallback] piped search ${instance} no results`)
-    return null
-  } catch (err) {
-    console.warn(`[fallback] piped search ${instance} error: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-async function getPipedProxyUrl(videoId: string, instance: string): Promise<string | null> {
-  const url = `${instance}/streams/${videoId}`
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(VIDEO_TIMEOUT) })
-    if (!res.ok) {
-      console.warn(`[fallback] piped streams ${instance} HTTP ${res.status}`)
-      return null
-    }
-    const data = await res.json()
-    const streams = data.audioStreams || []
-    if (streams.length === 0) {
-      console.warn(`[fallback] piped streams ${instance} no audio`)
-      return null
-    }
-    const audio = streams[0] as Record<string, unknown>
-    if (typeof audio.url !== "string") {
-      console.warn(`[fallback] piped streams ${instance} url missing`)
-      return null
-    }
-    return audio.url as string
-  } catch (err) {
-    console.warn(`[fallback] piped streams ${instance} error: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-async function resolveFromPiped(query: string): Promise<string | null> {
-  for (const instance of PIPED_INSTANCES) {
-    const result = await searchPiped(query, instance)
-    if (!result) continue
-    const proxyUrl = await getPipedProxyUrl(result.videoId, instance)
-    if (proxyUrl) {
-      console.warn(`[fallback] resolved piped ${instance}`)
-      return proxyUrl
-    }
-  }
-  return null
-}
-
 async function resolveAudioUrl(query: string): Promise<string | null> {
-  const invidiousUrl = await resolveFromInvidious(query)
-  if (invidiousUrl) return invidiousUrl
-  console.warn("[fallback] all invidious instances failed, trying piped")
-  return resolveFromPiped(query)
+  const instance = await getInnertube()
+  const searchResults = await instance.search(query, { type: "video" })
+  if (!searchResults.videos || searchResults.videos.length === 0) {
+    console.warn("[fallback] no search results")
+    return null
+  }
+  const video = searchResults.videos[0]
+  const videoId = video.id
+  if (!videoId) {
+    console.warn("[fallback] search result missing videoId")
+    return null
+  }
+  console.warn(`[fallback] found video: ${video.title?.slice(0, 60)} (${videoId})`)
+
+  const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
+  const info = await instance.getBasicInfo(videoId, "IOS")
+  signal.throwIfAborted()
+
+  const formats = info.streaming_data?.adaptive_formats || info.streaming_data?.formats || []
+  const audio = formats.find(
+    (f) =>
+      f.mime_type?.startsWith("audio/") &&
+      f.url
+  )
+  if (!audio?.url) {
+    console.warn(`[fallback] no audio format in ${formats.length} formats`)
+    return null
+  }
+  console.warn(`[fallback] audio: ${audio.mime_type} ${audio.bitrate}bps`)
+  return audio.url
 }
 
 async function streamAudio(
-  proxyUrl: string,
+  audioUrl: string,
   request: NextRequest
 ): Promise<Response | null> {
   try {
@@ -171,14 +86,14 @@ async function streamAudio(
     const range = request.headers.get("range")
     if (range) reqHeaders["Range"] = range
 
-    const res = await fetch(proxyUrl, {
+    const res = await fetch(audioUrl, {
       headers: reqHeaders,
       redirect: "follow",
       signal: AbortSignal.timeout(STREAM_TIMEOUT),
     })
 
     if (!res.ok) {
-      console.warn(`[fallback] stream HTTP ${res.status} for ${proxyUrl.slice(0, 80)}`)
+      console.warn(`[fallback] stream HTTP ${res.status} for ${audioUrl.slice(0, 80)}`)
       return null
     }
 
@@ -218,10 +133,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const proxyUrl = await resolveAudioUrl(q.trim())
-    if (!proxyUrl) return new Response(null, { status: 404 })
+    const audioUrl = await resolveAudioUrl(q.trim())
+    if (!audioUrl) return new Response(null, { status: 404 })
 
-    const result = await streamAudio(proxyUrl, request)
+    const result = await streamAudio(audioUrl, request)
     if (!result) return new Response(null, { status: 404 })
 
     return result
