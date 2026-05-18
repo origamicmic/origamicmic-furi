@@ -2,6 +2,7 @@ import { NextRequest } from "next/server"
 
 let YT_KEY = ""
 let YT_WEB_VERSION = ""
+let YT_ANDROID_VERSION = ""
 let YT_KEY_PROMISE: Promise<void> | null = null
 
 async function ensureKey() {
@@ -20,6 +21,9 @@ async function ensureKey() {
 
     const webMatch = html.match(/"INNERTUBE_CLIENT_VERSION":"(\d+\.\d+\.\d+)"/)
     if (webMatch) YT_WEB_VERSION = webMatch[1]
+
+    const androidMatch = html.match(/\"clientName\":\"ANDROID\"[^}]*\"clientVersion\":\"(\d+\.\d+\.\d+)\"/)
+    if (androidMatch) YT_ANDROID_VERSION = androidMatch[1]
   })()
   await YT_KEY_PROMISE
   YT_KEY_PROMISE = null
@@ -110,13 +114,13 @@ async function getAudioUrl(videoId: string): Promise<string | null> {
   await ensureKey()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
-    const data = await ytFetch("youtubei/v1/player", {
+    const data = await ytFetch("youtubei/v1/player?key=" + YT_KEY, {
       context: {
         client: {
           hl: "ja",
           gl: "JP",
           clientName: "ANDROID",
-          clientVersion: "19.44.33",
+          clientVersion: YT_ANDROID_VERSION || "19.44.33",
           androidSdkVersion: 33,
         },
       },
