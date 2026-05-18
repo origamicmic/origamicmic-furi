@@ -40,26 +40,36 @@ async function ensureClientId() {
   if (SC_CLIENT_ID) return
   if (SC_INIT_PROMISE) return SC_INIT_PROMISE
   SC_INIT_PROMISE = (async () => {
+    const CID_RE = /client_id\s*:\s*"([^"]+)"/g
+
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        const html = await scFetch("https://soundcloud.com/discover", {
+        const html = await scFetch("https://soundcloud.com/", {
           headers: { "User-Agent": SC_UA },
           signal: AbortSignal.timeout(10000),
         }).then((r) => r.text())
 
-        const scriptMatch = html.match(
-          /<script[^>]*src="(https:\/\/[^"]*sndcdn\.com\/[^"]*webpack[^"]*\.js[^"]*)"[^>]*>/,
-        )
-        if (scriptMatch) {
-          const js = await scFetch(scriptMatch[1], {
-            headers: { "User-Agent": SC_UA },
-            signal: AbortSignal.timeout(10000),
-          }).then((r) => r.text())
-          const m = js.match(/client_id\s*:\s*"([^"]+)"/)
-          if (m) {
-            SC_CLIENT_ID = m[1]
-            console.warn(`[fallback] sc client_id extracted on attempt ${attempt + 1}`)
-            return
+        // Extract ALL script src URLs
+        const scripts = [...html.matchAll(/<script[^>]+src\s*=\s*"([^"]+)"[^>]*>/gi)]
+
+        // Check scripts in reverse order (newest/most relevant first)
+        for (let i = scripts.length - 1; i >= 0; i--) {
+          const src = scripts[i][1]
+          try {
+            const js = await scFetch(src, {
+              headers: { "User-Agent": SC_UA },
+              signal: AbortSignal.timeout(10000),
+            }).then((r) => r.text())
+            const m = CID_RE.exec(js)
+            if (m) {
+              SC_CLIENT_ID = m[1]
+              CID_RE.lastIndex = 0
+              console.warn(`[fallback] sc client_id extracted on attempt ${attempt + 1}`)
+              return
+            }
+            CID_RE.lastIndex = 0
+          } catch {
+            // skip script that can't be fetched
           }
         }
         console.warn(`[fallback] sc client_id extraction attempt ${attempt + 1} failed`)
