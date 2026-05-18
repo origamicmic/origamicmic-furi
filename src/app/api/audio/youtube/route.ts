@@ -1,90 +1,10 @@
 import { NextRequest } from "next/server"
 
-const YT_KEY = process.env.YOUTUBE_API_KEY || "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-const YT_CLIENT_VERSION = process.env.YOUTUBE_CLIENT_VERSION || "2.20250423.00.00"
-
-const YT_CLIENT = {
-  hl: "ja",
-  gl: "JP",
-  clientName: "WEB",
-  clientVersion: YT_CLIENT_VERSION,
-}
-
-const YT_ORIGIN = "https://www.youtube.com"
-
-const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
-async function searchVideo(query: string): Promise<string | null> {
-  const res = await fetch(`${YT_ORIGIN}/youtubei/v1/search?key=${YT_KEY}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Origin": YT_ORIGIN,
-      "Referer": YT_ORIGIN,
-      "User-Agent": BROWSER_UA,
-    },
-    body: JSON.stringify({
-      context: { client: YT_CLIENT },
-      query,
-      params: "EgWKAQIIAWoKEAoQCRADEAAYASgB",
-    }),
-    signal: AbortSignal.timeout(12000),
-  })
-  if (!res.ok) return null
-
-  const data = await res.json()
-  const contents =
-    data.contents?.twoColumnSearchResultsRenderer?.primaryContents
-      ?.sectionListRenderer?.contents?.[0]?.itemSectionRenderer?.contents
-
-  if (!contents) return null
-  for (const item of contents) {
-    const videoId = item.videoRenderer?.videoId
-    if (videoId) return videoId
-  }
-  return null
-}
-
-async function getAudioStream(videoId: string): Promise<string | null> {
-  const res = await fetch(`${YT_ORIGIN}/youtubei/v1/player?key=${YT_KEY}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Origin": YT_ORIGIN,
-      "Referer": YT_ORIGIN,
-      "User-Agent": BROWSER_UA,
-    },
-    body: JSON.stringify({
-      context: { client: YT_CLIENT },
-      videoId,
-      contentCheckOk: true,
-      racyCheckOk: true,
-    }),
-    signal: AbortSignal.timeout(12000),
-  })
-  if (!res.ok) return null
-
-  const data = await res.json()
-  const formats =
-    data.streamingData?.adaptiveFormats || data.streamingData?.formats
-  if (!formats) return null
-
-  const audio = formats
-    .filter(
-      (f: Record<string, unknown>) =>
-        typeof f.mimeType === "string" && f.mimeType.startsWith("audio/")
-    )
-    .sort(
-      (a: Record<string, unknown>, b: Record<string, unknown>) =>
-        (Number(b.bitrate) || 0) - (Number(a.bitrate) || 0)
-    )
-
-  if (audio.length > 0 && typeof audio[0].url === "string") {
-    return audio[0].url as string
-  }
-  return null
-}
+const INVIDIOUS_INSTANCES = [
+  "https://inv.nadeko.net",
+  "https://inv.tux.pizza",
+  "https://invidious.privacyredirect.com",
+]
 
 function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uint8Array> {
   const reader = body!.getReader()
@@ -102,15 +22,58 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
   })
 }
 
+async function searchInvidious(query: string, instance: string): Promise<string | null> {
+  try {
+    const url = `${instance}/api/v1/search?q=${encodeURIComponent(query)}&type=video`
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    const results = Array.isArray(data) ? data : []
+    for (const item of results) {
+      if (item.videoId) return item.videoId as string
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function getAudioUrl(videoId: string, instance: string): Promise<string | null> {
+  try {
+    const url = `${instance}/api/v1/videos/${videoId}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(4000) })
+    if (!res.ok) return null
+    const data = await res.json()
+    const formats = data.adaptiveFormats || data.formatStreams || []
+    const audio = formats.find(
+      (f: Record<string, unknown>) =>
+        typeof f.type === "string" && f.type.startsWith("audio/")
+    )
+    if (audio && typeof audio.url === "string") return audio.url as string
+    return null
+  } catch {
+    return null
+  }
+}
+
+async function resolveAudioUrl(query: string): Promise<string | null> {
+  for (const instance of INVIDIOUS_INSTANCES) {
+    const videoId = await searchInvidious(query, instance)
+    if (!videoId) continue
+    const audioUrl = await getAudioUrl(videoId, instance)
+    if (audioUrl) return audioUrl
+  }
+  return null
+}
+
 async function streamAudio(
   audioUrl: string,
   request: NextRequest
 ): Promise<Response | null> {
   try {
     const reqHeaders: Record<string, string> = {
-      "User-Agent": BROWSER_UA,
-      "Referer": YT_ORIGIN,
-      "Origin": YT_ORIGIN,
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     }
     const range = request.headers.get("range")
     if (range) reqHeaders["Range"] = range
@@ -118,7 +81,7 @@ async function streamAudio(
     const res = await fetch(audioUrl, {
       headers: reqHeaders,
       redirect: "follow",
-      signal: AbortSignal.timeout(60000),
+      signal: AbortSignal.timeout(10000),
     })
 
     if (!res.ok) return null
@@ -126,10 +89,7 @@ async function streamAudio(
     const rawCt = res.headers.get("content-type") || ""
     const ct = rawCt.split(";")[0].trim()
     const responseHeaders = new Headers()
-    responseHeaders.set(
-      "Content-Type",
-      ct || "application/octet-stream"
-    )
+    responseHeaders.set("Content-Type", ct || "application/octet-stream")
     responseHeaders.set("Accept-Ranges", "bytes")
     responseHeaders.set("Cache-Control", "public, max-age=3600")
     responseHeaders.set("Access-Control-Allow-Origin", "*")
@@ -161,10 +121,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const videoId = await searchVideo(q.trim())
-    if (!videoId) return new Response(null, { status: 404 })
-
-    const audioUrl = await getAudioStream(videoId)
+    const audioUrl = await resolveAudioUrl(q.trim())
     if (!audioUrl) return new Response(null, { status: 404 })
 
     const result = await streamAudio(audioUrl, request)
