@@ -34,6 +34,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const stallRetries = useRef(0)
   const playingRef = useRef(false)
   const audioSrcRef = useRef(src)
+  const retryTimer = useRef<ReturnType<typeof setTimeout>>()
 
   useEffect(() => { playingRef.current = playing }, [playing])
 
@@ -106,19 +107,9 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       audio.play().catch(() => {})
       return
     }
-    console.warn("[player] stalled during load, switching to fallback")
-    if (fallbackSrc && !fallbackTried.current) {
-      fallbackTried.current = true
-      stallRetries.current = 0
-      setError(false)
-      audioSrcRef.current = fallbackSrc
-      audio.src = fallbackSrc
-      setLoading(true)
-    } else {
-      setLoading(false)
-      setError(true)
-    }
-  }, [fallbackSrc])
+    setLoading(false)
+    setError(true)
+  }, [])
 
   const onSeeking = useCallback(() => { seeking.current = true }, [])
 
@@ -132,6 +123,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     fallbackTried.current = false
     stallRetries.current = 0
     audioSrcRef.current = src
+    if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = undefined }
     const audio = audioRef.current
     if (!audio) return
 
@@ -160,6 +152,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     if (!audio) return
     if (loading) return
     if (error) {
+      if (retryTimer.current) clearTimeout(retryTimer.current)
       setError(false)
       setLoading(true)
       fallbackTried.current = false
@@ -167,7 +160,12 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       audioSrcRef.current = src
       audio.src = src
       audio.load()
-      audio.play().then(() => setPlaying(true)).catch(() => setError(true))
+      retryTimer.current = setTimeout(() => {
+        if (audioRef.current?.error) {
+          setError(true)
+          setLoading(false)
+        }
+      }, 15000)
       return
     }
     if (playing) {

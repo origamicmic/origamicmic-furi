@@ -1,13 +1,13 @@
 import { NextRequest } from "next/server"
 
 const INVIDIOUS_INSTANCES = [
-  "https://inv.nadeko.net",
-  "https://inv.tux.pizza",
-  "https://invidious.privacyredirect.com",
+  "https://inv.thepixora.com",
+  "https://yt.chocolatemoo53.com",
+  "https://invidious.nerdvpn.de",
 ]
 
 const PIPED_INSTANCES = [
-  "https://pipedapi.kavin.rocks",
+  "https://pipedapi.syncpundit.io",
 ]
 
 const SEARCH_TIMEOUT = 5000

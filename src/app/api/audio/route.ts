@@ -65,10 +65,13 @@ async function streamFromCDN(
       const res = await fetch(url, {
         headers,
         redirect: "follow",
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(3000),
       })
 
-      if (!res.ok) return null
+      if (!res.ok) {
+        console.warn(`[audio] CDN fetch HTTP ${res.status} for ${url.slice(0, 80)}`)
+        return null
+      }
 
       const rawCt = (res.headers.get("content-type") || "").toLowerCase()
       const ct = rawCt.split(";")[0].trim()
@@ -112,7 +115,7 @@ async function streamFromEAPI(
   id: string,
   request: NextRequest
 ): Promise<Response | null> {
-  for (const br of [999000, 320000, 128000]) {
+  for (const br of [320000, 128000, 999000]) {
     try {
       const params = eapiEncrypt("/api/song/enhance/player/url", {
         ids: `[${id}]`,
@@ -128,7 +131,7 @@ async function streamFromEAPI(
             "Cookie": "os=pc",
           },
           body: `params=${encodeURIComponent(params)}`,
-          signal: AbortSignal.timeout(12000),
+          signal: AbortSignal.timeout(5000),
         }
       )
 
