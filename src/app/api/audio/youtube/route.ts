@@ -2,7 +2,6 @@ import { NextRequest } from "next/server"
 
 let YT_KEY = ""
 let YT_WEB_VERSION = ""
-let YT_ANDROID_VERSION = ""
 let YT_KEY_PROMISE: Promise<void> | null = null
 
 async function ensureKey() {
@@ -21,9 +20,6 @@ async function ensureKey() {
 
     const webMatch = html.match(/"INNERTUBE_CLIENT_VERSION":"(\d+\.\d+\.\d+)"/)
     if (webMatch) YT_WEB_VERSION = webMatch[1]
-
-    const androidMatch = html.match(/\"clientName\":\"ANDROID\"[^}]*\"clientVersion\":\"(\d+\.\d+\.\d+)\"/)
-    if (androidMatch) YT_ANDROID_VERSION = androidMatch[1]
   })()
   await YT_KEY_PROMISE
   YT_KEY_PROMISE = null
@@ -111,37 +107,36 @@ async function searchVideo(query: string): Promise<string | null> {
 }
 
 async function getAudioUrl(videoId: string): Promise<string | null> {
-  await ensureKey()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
-    const data = await ytFetch("youtubei/v1/player?key=" + YT_KEY, {
-      context: {
-        client: {
-          hl: "ja",
-          gl: "JP",
-          clientName: "ANDROID",
-          clientVersion: YT_ANDROID_VERSION || "19.44.33",
-          androidSdkVersion: 33,
-        },
+    const html = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept-Language": "ja;q=0.9,zh-CN;q=0.8,en;q=0.7",
       },
-      videoId,
-      contentCheckOk: true,
-      racyCheckOk: true,
-    }, signal)
-    const sd = (data as Record<string, unknown>).streamingData as Record<string, unknown> | undefined
+      signal,
+    }).then((r) => r.text())
+
+    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});\s*var\s+head/)
+    if (!match) {
+      console.warn("[fallback] ytInitialPlayerResponse not found in watch page")
+      return null
+    }
+    const data = JSON.parse(match[1]) as Record<string, unknown>
+    const sd = data.streamingData as Record<string, unknown> | undefined
     const formats = (sd?.adaptiveFormats || sd?.formats || []) as Record<string, unknown>[]
     const audio = formats.find(
       (f: Record<string, unknown>) => typeof f.mimeType === "string" && f.mimeType.startsWith("audio/") && f.url
     )
     if (!audio) {
-      const keys = data ? Object.keys(data).join(",") : "null"
-      console.warn(`[fallback] player: no audio in ${formats.length}/${keys}`)
+      console.warn(`[fallback] watch: no audio in ${formats.length} formats`)
       return null
     }
     console.warn(`[fallback] audio: ${audio.mimeType} ${audio.bitrate}bps`)
     return audio.url as string
   } catch (err) {
-    console.warn(`[fallback] player error: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[fallback] watch error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }
