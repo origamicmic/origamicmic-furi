@@ -1,29 +1,34 @@
 import { NextRequest } from "next/server"
 
-let YT_KEY = ""
-let YT_WEB_VERSION = ""
-let YT_KEY_PROMISE: Promise<void> | null = null
+let SC_CLIENT_ID = ""
+let SC_INIT_PROMISE: Promise<void> | null = null
 
-async function ensureKey() {
-  if (YT_KEY) return
-  if (YT_KEY_PROMISE) return YT_KEY_PROMISE
-  YT_KEY_PROMISE = (async () => {
-    const html = await fetch("https://www.youtube.com/embed/UNIQUE_ID", {
+async function ensureClientId() {
+  if (SC_CLIENT_ID) return
+  if (SC_INIT_PROMISE) return SC_INIT_PROMISE
+  SC_INIT_PROMISE = (async () => {
+    const html = await fetch("https://soundcloud.com/discover", {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       },
     }).then((r) => r.text())
 
-    const keyMatch = html.match(/"INNERTUBE_API_KEY":"(AIza[^"]+)"/)
-    if (keyMatch) YT_KEY = keyMatch[1]
-
-    const webMatch = html.match(/"INNERTUBE_CLIENT_VERSION":"(\d+\.\d+\.\d+)"/)
-    if (webMatch) YT_WEB_VERSION = webMatch[1]
+    const match = html.match(/<script[^>]*src="(https:\/\/[^"]*sndcdn\.com\/[^"]*webpack\.js[^"]*)"[^>]*>/)
+    if (match) {
+      const js = await fetch(match[1], {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        },
+      }).then((r) => r.text())
+      const m = js.match(/client_id\s*:\s*"([a-zA-Z0-9]{32})"/)
+      if (m) SC_CLIENT_ID = m[1]
+    }
   })()
-  await YT_KEY_PROMISE
-  YT_KEY_PROMISE = null
-  if (!YT_KEY) throw new Error("Failed to extract YT key")
+  await SC_INIT_PROMISE
+  SC_INIT_PROMISE = null
+  if (!SC_CLIENT_ID) throw new Error("Failed to extract SoundCloud client_id")
 }
 
 const SEARCH_TIMEOUT = 6000
@@ -45,98 +50,66 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
   })
 }
 
-async function ytFetch(path: string, body: Record<string, unknown>, signal: AbortSignal): Promise<Record<string, unknown>> {
-  const res = await fetch(`https://www.youtube.com/${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Origin": "https://www.youtube.com",
-      "Referer": "https://www.youtube.com/",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    },
-    body: JSON.stringify(body),
-    signal,
-  })
-  if (!res.ok) {
-    console.warn(`[fallback] yt ${path} HTTP ${res.status}`)
-    throw new Error(`HTTP ${res.status}`)
-  }
-  return res.json()
-}
-
-async function searchVideo(query: string): Promise<string | null> {
-  await ensureKey()
+async function resolveAudioUrl(query: string): Promise<string | null> {
+  await ensureClientId()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
-    const data = await ytFetch("youtubei/v1/search?key=" + YT_KEY, {
-      context: {
-        client: {
-          hl: "ja",
-          gl: "JP",
-          clientName: "WEB",
-          clientVersion: YT_WEB_VERSION || "2.20250518.00.00",
-        },
-      },
-      query,
-      params: "EgWKAQIIAWoKEAoQCRADEAAYASgB",
-    }, signal)
-    const contents = (data as Record<string, unknown>).contents
-      ?.twoColumnSearchResultsRenderer
-      ?.primaryContents
-      ?.sectionListRenderer
-      ?.contents
-    if (!contents) { console.warn("[fallback] search: no contents"); return null }
-    for (const section of contents) {
-      const items = section?.itemSectionRenderer?.contents
-      if (!items) continue
-      for (const item of items) {
-        const id = item?.videoRenderer?.videoId
-        if (id) {
-          console.warn(`[fallback] found: ${item.videoRenderer.title?.runs?.[0]?.text?.slice(0, 50)} (${id})`)
-          return id
-        }
-      }
-    }
-    console.warn("[fallback] search: no videoId found")
-    return null
-  } catch (err) {
-    console.warn(`[fallback] search error: ${err instanceof Error ? err.message : String(err)}`)
-    return null
-  }
-}
-
-async function getAudioUrl(videoId: string): Promise<string | null> {
-  const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
-  try {
-    const html = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+    const searchUrl =
+      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=3&client_id=${SC_CLIENT_ID}`
+    const searchRes = await fetch(searchUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept-Language": "ja;q=0.9,zh-CN;q=0.8,en;q=0.7",
+        "Accept": "application/json",
       },
       signal,
-    }).then((r) => r.text())
+    })
+    if (!searchRes.ok) {
+      console.warn(`[fallback] sc search HTTP ${searchRes.status}`)
+      return null
+    }
+    const searchData = await searchRes.json() as Record<string, unknown>
+    const collection = searchData.collection as Record<string, unknown>[] | undefined
+    if (!collection || collection.length === 0) {
+      console.warn("[fallback] sc no results")
+      return null
+    }
+    const track = collection[0]
+    console.warn(`[fallback] sc found: ${String(track.title || "").slice(0, 50)}`)
 
-    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{[\s\S]+?\});/)
-    if (!match) {
-      console.warn(`[fallback] ytInitialPlayerResponse not found (html head: ${html.slice(0, 200)})`)
+    const media = track.media as Record<string, unknown> | undefined
+    const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
+    if (!transcodings || transcodings.length === 0) {
+      console.warn("[fallback] sc no transcodings")
       return null
     }
-    const data = JSON.parse(match[1]) as Record<string, unknown>
-    const sd = data.streamingData as Record<string, unknown> | undefined
-    const formats = (sd?.adaptiveFormats || sd?.formats || []) as Record<string, unknown>[]
-    const audio = formats.find(
-      (f: Record<string, unknown>) => typeof f.mimeType === "string" && f.mimeType.startsWith("audio/") && f.url
-    )
-    if (!audio) {
-      console.warn(`[fallback] watch: no audio in ${formats.length} formats`)
+    const prog = transcodings.find(
+      (t: Record<string, unknown>) =>
+        typeof t.format?.protocol === "string" && t.format.protocol === "progressive"
+    ) || transcodings[0]
+    const transcodeUrl = String(prog.url || "")
+
+    const transcodeRes = await fetch(`${transcodeUrl}?client_id=${SC_CLIENT_ID}`, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT),
+    })
+    if (!transcodeRes.ok) {
+      console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status}`)
       return null
     }
-    console.warn(`[fallback] audio: ${audio.mimeType} ${audio.bitrate}bps`)
-    return audio.url as string
+    const transcodeData = await transcodeRes.json() as Record<string, unknown>
+    const audioUrl = transcodeData.url as string | undefined
+    if (!audioUrl) {
+      console.warn("[fallback] sc no audio url in transcode")
+      return null
+    }
+    console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
+    return audioUrl
   } catch (err) {
-    console.warn(`[fallback] watch error: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[fallback] sc error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }
@@ -160,7 +133,7 @@ async function streamAudio(
     })
 
     if (!res.ok) {
-      console.warn(`[fallback] stream HTTP ${res.status}`)
+      console.warn(`[fallback] sc stream HTTP ${res.status}`)
       return null
     }
 
@@ -187,7 +160,7 @@ async function streamAudio(
       headers: responseHeaders,
     })
   } catch (err) {
-    console.warn(`[fallback] stream error: ${err instanceof Error ? err.message : String(err)}`)
+    console.warn(`[fallback] sc stream error: ${err instanceof Error ? err.message : String(err)}`)
     return null
   }
 }
@@ -200,10 +173,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const videoId = await searchVideo(q.trim())
-    if (!videoId) return new Response(null, { status: 404 })
-
-    const audioUrl = await getAudioUrl(videoId)
+    const audioUrl = await resolveAudioUrl(q.trim())
     if (!audioUrl) return new Response(null, { status: 404 })
 
     const result = await streamAudio(audioUrl, request)
