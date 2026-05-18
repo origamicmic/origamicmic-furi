@@ -34,6 +34,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const stallRetries = useRef(0)
   const playingRef = useRef(false)
   const audioSrcRef = useRef(src)
+  const switching = useRef(false)
 
   useEffect(() => { playingRef.current = playing }, [playing])
 
@@ -66,17 +67,25 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
 
   const onEnd = useCallback(() => setPlaying(false), [])
 
+  const onCanPlay = useCallback(() => {
+    stallRetries.current = 0
+  }, [])
+
   const onErr = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
+    if (switching.current) return
     setLoading(false)
     if (fallbackSrc && !fallbackTried.current) {
       console.warn("[player] primary failed, switching to fallback")
       fallbackTried.current = true
+      switching.current = true
+      stallRetries.current = 0
+      setError(false)
       audioSrcRef.current = fallbackSrc
       audio.src = fallbackSrc
-      audio.load()
       setLoading(true)
+      setTimeout(() => { switching.current = false }, 800)
     } else {
       console.warn("[player] playback failed, no fallback available or already tried")
       setError(true)
@@ -86,18 +95,31 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const onStalled = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
+
+    if (playingRef.current) {
+      if (stallRetries.current < 3) {
+        stallRetries.current++
+        audio.play().catch(() => {})
+      }
+      return
+    }
+
     if (stallRetries.current < 3) {
       stallRetries.current++
       audio.play().catch(() => {})
       return
     }
-    console.warn("[player] stalled after retries, switching to fallback")
+    if (switching.current) return
+    console.warn("[player] stalled during load, switching to fallback")
     if (fallbackSrc && !fallbackTried.current) {
       fallbackTried.current = true
+      switching.current = true
+      stallRetries.current = 0
+      setError(false)
       audioSrcRef.current = fallbackSrc
       audio.src = fallbackSrc
-      audio.load()
       setLoading(true)
+      setTimeout(() => { switching.current = false }, 800)
     } else {
       setLoading(false)
       setError(true)
@@ -128,10 +150,13 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       setLoading(false)
       if (fallbackSrc && !fallbackTried.current) {
         fallbackTried.current = true
+        switching.current = true
+        stallRetries.current = 0
+        setError(false)
         audioSrcRef.current = fallbackSrc
         audio.src = fallbackSrc
-        audio.load()
         setLoading(true)
+        setTimeout(() => { switching.current = false }, 800)
       } else {
         setError(true)
       }
@@ -209,6 +234,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
         onEnded={onEnd}
         onError={onErr}
         onStalled={onStalled}
+        onCanPlay={onCanPlay}
         onSeeking={onSeeking}
         onSeeked={onSeeked}
       />
