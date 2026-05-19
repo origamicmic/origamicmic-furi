@@ -106,6 +106,158 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
   })
 }
 
+async function tryResolveAudioUrl(
+  searchQuery: string,
+  expectTitle: string | null,
+  expectArtist: string | null,
+  diag?: Record<string, unknown>
+): Promise<string | null> {
+  const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
+  const searchUrl =
+    `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(searchQuery)}&limit=5&client_id=${SC_CLIENT_ID}`
+  const searchRes = await scFetch(searchUrl, {
+    headers: SC_API_HEADERS,
+    signal,
+  })
+  if (!searchRes.ok) {
+    console.warn(`[fallback] sc search HTTP ${searchRes.status}`)
+    if (diag) { diag.step = "search_http"; diag.status = searchRes.status }
+    return null
+  }
+  const searchData = await searchRes.json() as Record<string, unknown>
+  const collection = searchData.collection as Record<string, unknown>[] | undefined
+  if (!collection || collection.length === 0) {
+    console.warn("[fallback] sc no results")
+    return null
+  }
+
+  // Sort results by title similarity to the expected title
+  if (expectTitle) {
+    const et = expectTitle.toLowerCase().trim()
+        .replace(/[･・]{2,}/g, " ")
+        .replace(/[~～…\.]{2,}/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    const ea = (expectArtist || "").toLowerCase().trim()
+        .replace(/&/g, "and")
+        .replace(/[･・]{2,}/g, " ")
+        .replace(/[~～…\.]{2,}/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+
+    const isCover = (t: string) => /cover|カバー|covered|remix|リミックス|remixed|arrange|アレンジ|instrumental|インスト|off vocal|offvocal|カラオケ|karaoke/i.test(t)
+    const scoreTitle = (t: string, u: string) => {
+      const tl = t.toLowerCase().trim()
+      const ul = u.toLowerCase()
+      let score = 0
+      if (tl === et) { score += 50 }
+      else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " –") || tl.startsWith(et + " ~")) { score += 45 }
+      else if (tl.startsWith(et + " (")) { score += 40 }
+      else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) { score += 25 }
+      else if (tl.includes(et)) { score += 15 }
+      const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
+      score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 5, 15)
+      if (ea) {
+        if (ul.includes(ea)) score += 30
+        else if (ea.split(/\s+/).some((w) => w.length >= 2 && ul.includes(w))) score += 10
+        if (tl.includes(ea)) score += 25
+      }
+      if (isCover(tl)) score -= 20
+      return score
+    }
+    ;(collection as Record<string, unknown>[]).sort((a, b) => {
+      return scoreTitle(String(b.title || ""), String(b.user?.username || "")) -
+             scoreTitle(String(a.title || ""), String(a.user?.username || ""))
+    })
+    if (diag) {
+      diag.sortedByTitle = expectTitle
+      diag.artistHint = ea || null
+      diag.searchScores = (collection as Record<string, unknown>[]).slice(0, 5).map((t) => ({
+        title: String(t.title || "").slice(0, 50),
+        user: String((t.user as Record<string, unknown>)?.username || ""),
+        score: scoreTitle(String(t.title || ""), String((t.user as Record<string, unknown>)?.username || "")),
+      }))
+    }
+  }
+
+  // Extract progressive audio from the sorted collection
+  return extractProgressive(collection, diag)
+}
+
+async function extractProgressive(
+  collection: Record<string, unknown>[],
+  diag?: Record<string, unknown>
+): Promise<string | null> {
+  for (let ti = 0; ti < collection.length; ti++) {
+    const track = collection[ti]
+    console.warn(`[fallback] sc track ${ti + 1}: ${String(track.title || "").slice(0, 50)}`)
+    if (diag) {
+      diag.foundTrack = String(track.title || "").slice(0, 60)
+      diag.trackId = String(track.id || "")
+      diag.trackIndex = ti
+    }
+
+    const media = track.media as Record<string, unknown> | undefined
+    const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
+    if (!transcodings || transcodings.length === 0) continue
+
+    const progressiveTc = transcodings.filter(
+      (t: Record<string, unknown>) =>
+        typeof t.format?.protocol === "string" && t.format.protocol === "progressive"
+    )
+    if (progressiveTc.length === 0) continue
+    if (diag) { diag.transcodeProtocol = "progressive"; diag.transcodingsTotal = transcodings.length; diag.progressiveCount = progressiveTc.length }
+
+    for (const tcEntry of progressiveTc) {
+      const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
+      if (!tcUrl) continue
+      const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
+        headers: SC_API_HEADERS,
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT),
+      })
+      if (!transcodeRes.ok) {
+        console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status} for ${tcUrl.slice(0, 60)}`)
+        if (diag) { diag.transcodeUrl = tcUrl.slice(0, 120); diag.step = "transcode_http"; diag.status = transcodeRes.status }
+        continue
+      }
+      const transcodeData = await transcodeRes.json() as Record<string, unknown>
+      const audioUrl = transcodeData.url as string | undefined
+      if (!audioUrl) continue
+      if (audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) continue
+      console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
+      return audioUrl
+    }
+  }
+
+  // Second pass: try non-DRM non-progressive
+  console.warn("[fallback] sc progressive exhausted, trying non-progressive")
+  for (let ti = 0; ti < collection.length; ti++) {
+    const track = collection[ti]
+    const media = track.media as Record<string, unknown> | undefined
+    const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
+    if (!transcodings || transcodings.length === 0) continue
+    for (const tcEntry of transcodings) {
+      const protocol = String((tcEntry as Record<string, unknown>).format?.protocol || "")
+      if (protocol === "progressive") continue
+      if (protocol.includes("encrypted") || protocol.includes("cbc") || protocol.includes("ctr")) continue
+      const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
+      if (!tcUrl || tcUrl.includes("playback.media-streaming")) continue
+      const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
+        headers: SC_API_HEADERS,
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT),
+      })
+      if (!transcodeRes.ok) continue
+      const transcodeData = await transcodeRes.json() as Record<string, unknown>
+      const audioUrl = transcodeData.url as string | undefined
+      if (!audioUrl || audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) continue
+      console.warn(`[fallback] sc audio (fallback): ${audioUrl.slice(0, 80)}`)
+      return audioUrl
+    }
+  }
+  if (diag && !diag.step) { diag.step = "all_tracks_failed" }
+  return null
+}
+
 async function resolveAudioUrl(
   query: string,
   expectTitle: string | null,
@@ -113,171 +265,44 @@ async function resolveAudioUrl(
   diag?: Record<string, unknown>
 ): Promise<string | null> {
   await ensureClientId()
-  const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
 
-  // Clean query: strip unusual punctuations/repetitive chars, replace & with space
   const cleanQuery = query
     .replace(/&/g, " ")
     .replace(/[･・]{2,}/g, " ")
     .replace(/[~～…\.]{2,}/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-  try {
-    const searchUrl =
-      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(cleanQuery)}&limit=5&client_id=${SC_CLIENT_ID}`
-    const searchRes = await scFetch(searchUrl, {
-      headers: SC_API_HEADERS,
-      signal,
-    })
-    if (!searchRes.ok) {
-      console.warn(`[fallback] sc search HTTP ${searchRes.status}`)
-      if (diag) { diag.step = "search_http"; diag.status = searchRes.status }
-      return null
-    }
-    const searchData = await searchRes.json() as Record<string, unknown>
-    const collection = searchData.collection as Record<string, unknown>[] | undefined
-    if (!collection || collection.length === 0) {
-      console.warn("[fallback] sc no results")
-      if (diag) { diag.step = "search_empty" }
-      return null
-    }
 
-    // Sort results by title similarity to the expected title
-    if (expectTitle) {
-      const et = expectTitle.toLowerCase().trim()
-          .replace(/[･・]{2,}/g, " ")
-          .replace(/[~～…\.]{2,}/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-      const ea = (expectArtist || "").toLowerCase().trim()
-          .replace(/&/g, "and")
-          .replace(/[･・]{2,}/g, " ")
-          .replace(/[~～…\.]{2,}/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
+  // First attempt: full query
+  let result = await tryResolveAudioUrl(cleanQuery, expectTitle, expectArtist, diag)
+  if (result) return result
 
-      const isCover = (t: string) => /cover|カバー|covered|remix|リミックス|remixed|arrange|アレンジ|instrumental|インスト|off vocal|offvocal|カラオケ|karaoke/i.test(t)
-      const scoreTitle = (t: string, u: string) => {
-        const tl = t.toLowerCase().trim()
-        const ul = u.toLowerCase()
-        let score = 0
-        // Title matching
-        if (tl === et) { score += 50 }
-        else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " –") || tl.startsWith(et + " ~")) { score += 45 }
-        else if (tl.startsWith(et + " (")) { score += 40 }
-        else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) { score += 25 }
-        else if (tl.includes(et)) { score += 15 }
-        const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
-        score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 5, 15)
-        // Artist matching bonus
-        if (ea) {
-          if (ul.includes(ea)) score += 30
-          else if (ea.split(/\s+/).some((w) => w.length >= 2 && ul.includes(w))) score += 10
-          // Bonus: artist name appears in title (original artist credit)
-          if (tl.includes(ea)) score += 25
-        }
-        // Penalize covers/remixes/instrumentals
-        if (isCover(tl)) score -= 20
-        return score
-      }
-      ;(collection as Record<string, unknown>[]).sort((a, b) => {
-        return scoreTitle(String(b.title || ""), String(b.user?.username || "")) -
-               scoreTitle(String(a.title || ""), String(a.user?.username || ""))
-      })
-      if (diag) {
-        diag.sortedByTitle = expectTitle
-        diag.artistHint = ea || null
-        diag.searchScores = (collection as Record<string, unknown>[]).slice(0, 5).map((t) => ({
-          title: String(t.title || "").slice(0, 50),
-          user: String((t.user as Record<string, unknown>)?.username || ""),
-          score: scoreTitle(String(t.title || ""), String((t.user as Record<string, unknown>)?.username || "")),
-        }))
-      }
-    }
-    for (let ti = 0; ti < collection.length; ti++) {
-      const track = collection[ti]
-      console.warn(`[fallback] sc track ${ti + 1}: ${String(track.title || "").slice(0, 50)}`)
-      if (diag) {
-        diag.foundTrack = String(track.title || "").slice(0, 60)
-        diag.trackId = String(track.id || "")
-        diag.trackIndex = ti
-      }
-
-      const media = track.media as Record<string, unknown> | undefined
-      const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
-      if (!transcodings || transcodings.length === 0) continue
-
-      // Only use progressive (non-DRM, non-HLS) transcodings
-      const progressiveTc = transcodings.filter(
-        (t: Record<string, unknown>) =>
-          typeof t.format?.protocol === "string" && t.format.protocol === "progressive"
-      )
-      if (progressiveTc.length === 0) continue
-      if (diag) { diag.transcodeProtocol = "progressive"; diag.transcodingsTotal = transcodings.length; diag.progressiveCount = progressiveTc.length }
-
-      for (const tcEntry of progressiveTc) {
-        const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
-        if (!tcUrl) continue
-        const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
-          headers: SC_API_HEADERS,
-          signal: AbortSignal.timeout(SEARCH_TIMEOUT),
-        })
-        if (!transcodeRes.ok) {
-          console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status} for ${tcUrl.slice(0, 60)}`)
-          if (diag) { diag.transcodeUrl = tcUrl.slice(0, 120); diag.step = "transcode_http"; diag.status = transcodeRes.status }
-          continue
-        }
-        const transcodeData = await transcodeRes.json() as Record<string, unknown>
-        const audioUrl = transcodeData.url as string | undefined
-        if (!audioUrl) continue
-        // Verify it's not an HLS manifest (some progressive labels still return HLS)
-        if (audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) {
-          console.warn(`[fallback] sc skipping HLS/streaming URL: ${audioUrl.slice(0, 60)}`)
-          continue
-        }
-        console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
-        return audioUrl
-      }
-    }
-    // Second pass: progressive failed on all results, try non-DRM non-progressive
-    console.warn("[fallback] sc progressive exhausted, trying non-progressive")
-    for (let ti = 0; ti < collection.length; ti++) {
-      const track = collection[ti]
-      const media = track.media as Record<string, unknown> | undefined
-      const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
-      if (!transcodings || transcodings.length === 0) continue
-
-      for (const tcEntry of transcodings) {
-        const protocol = String((tcEntry as Record<string, unknown>).format?.protocol || "")
-        // Skip progressive (already tried), encrypted/DRM, and empty URLs
-        if (protocol === "progressive") continue
-        if (protocol.includes("encrypted") || protocol.includes("cbc") || protocol.includes("ctr")) continue
-        const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
-        if (!tcUrl) continue
-        // Skip known streaming/HLS CDN URLs
-        if (tcUrl.includes("playback.media-streaming")) continue
-
-        console.warn(`[fallback] sc trying ${protocol}: ${tcUrl.slice(0, 60)}`)
-        const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
-          headers: SC_API_HEADERS,
-          signal: AbortSignal.timeout(SEARCH_TIMEOUT),
-        })
-        if (!transcodeRes.ok) continue
-        const transcodeData = await transcodeRes.json() as Record<string, unknown>
-        const audioUrl = transcodeData.url as string | undefined
-        if (!audioUrl) continue
-        if (audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) continue
-        console.warn(`[fallback] sc audio (fallback): ${audioUrl.slice(0, 80)}`)
-        return audioUrl
-      }
-    }
-    if (diag && !diag.step) { diag.step = "all_tracks_failed" }
-    return null
-  } catch (err) {
-    console.warn(`[fallback] sc error: ${err instanceof Error ? err.message : String(err)}`)
-    if (diag) { diag.step = "exception"; diag.errorMsg = err instanceof Error ? err.message : String(err) }
-    return null
+  // If no results or all scores 0, retry with simplified query
+  if (expectTitle && expectArtist) {
+    const simpleQuery = expectTitle
+    console.warn(`[fallback] sc retrying with title-only: ${simpleQuery}`)
+    if (diag) { diag.retryQuery = simpleQuery; diag.step = null }
+    result = await tryResolveAudioUrl(simpleQuery, expectTitle, null, diag)
+    if (result) return result
   }
+
+  // Last resort: just the core title words (strip parentheticals)
+  if (expectTitle) {
+    const coreTitle = expectTitle
+      .replace(/[\(\[\{].*?[\)\]\}]/g, " ")
+      .replace(/[･・]{2,}/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+    if (coreTitle !== cleanQuery && coreTitle.length >= 2) {
+      console.warn(`[fallback] sc last resort: ${coreTitle}`)
+      if (diag) { diag.retryQuery = coreTitle; diag.step = null }
+      result = await tryResolveAudioUrl(coreTitle, expectTitle, expectArtist, diag)
+      if (result) return result
+    }
+  }
+
+  if (diag && !diag.step) { diag.step = "search_empty" }
+  return null
 }
 
 async function streamAudio(
