@@ -109,6 +109,7 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
 async function resolveAudioUrl(
   query: string,
   expectTitle: string | null,
+  expectArtist: string | null,
   diag?: Record<string, unknown>
 ): Promise<string | null> {
   await ensureClientId()
@@ -135,19 +136,34 @@ async function resolveAudioUrl(
 
     // Sort results by title similarity to the expected title
     if (expectTitle) {
-      const et = expectTitle.toLowerCase()
-      const scoreTitle = (t: string) => {
-        const tl = t.toLowerCase()
-        if (tl === et) return 100
-        if (tl.startsWith(et)) return 90
-        if (tl.includes(et)) return 70
-        // Check word-level matching (title might contain " - " or " / ")
-        const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
-        const matchCount = words.filter((w) => w.length >= 2 && tl.includes(w)).length
-        return matchCount * 20
+      const et = expectTitle.toLowerCase().trim()
+      const ea = (expectArtist || "").toLowerCase().trim()
+      const cleanTitle = (t: string) => t.toLowerCase().trim().replace(/\s*[-~|/]\s*.*$/, "").trim()
+      const scoreTitle = (t: string, u: string) => {
+        const tl = t.toLowerCase().trim()
+        const ul = u.toLowerCase()
+        let score = 0
+        // Title matching
+        const ct = cleanTitle(tl)
+        if (ct === et || tl === et) { score += 50 }
+        else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " /")) { score += 45 }
+        else if (tl.startsWith(et + " (")) { score += 40 }
+        else if (tl.startsWith(et)) { score += 30 }
+        else if (tl.includes(et)) { score += 20 }
+        else {
+          const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
+          score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 10, 20)
+        }
+        // Artist matching bonus
+        if (ea) {
+          if (ul.includes(ea)) score += 30
+          else if (ea.split(/\s+/).some((w) => w.length >= 2 && ul.includes(w))) score += 10
+        }
+        return score
       }
       ;(collection as Record<string, unknown>[]).sort((a, b) => {
-        return scoreTitle(String(b.title || "")) - scoreTitle(String(a.title || ""))
+        return scoreTitle(String(b.title || ""), String(b.user?.username || "")) -
+               scoreTitle(String(a.title || ""), String(a.user?.username || ""))
       })
       if (diag) { diag.sortedByTitle = expectTitle }
     }
@@ -293,6 +309,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get("q")
   const title = searchParams.get("title")
+  const artist = searchParams.get("artist")
   const debug = searchParams.get("debug")
   if (!q || q.trim().length === 0) {
     return new Response(null, { status: 400 })
@@ -310,7 +327,7 @@ export async function GET(request: NextRequest) {
       return Response.json(diag, { status: 404 })
     }
 
-    const audioUrl = await resolveAudioUrl(q.trim(), title?.trim() || null, diag)
+    const audioUrl = await resolveAudioUrl(q.trim(), title?.trim() || null, artist?.trim() || null, diag)
     diag.audioUrlResolved = !!audioUrl
     if (!audioUrl) {
       diag.error = "no_audio_url"
