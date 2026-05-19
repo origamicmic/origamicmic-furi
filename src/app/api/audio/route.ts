@@ -3,6 +3,10 @@ import crypto from "crypto"
 
 const EAPI_KEY = process.env.EAPI_KEY || "e82ckenh8dichen8"
 
+// Cache resolved audio URLs per song ID (avoids re-resolving on each Range/seek)
+const urlCache = new Map<string, { url: string; time: number }>()
+const URL_CACHE_TTL = 10 * 60 * 1000
+
 function eapiEncrypt(path: string, body: Record<string, unknown>): string {
   const text = JSON.stringify(body)
   const message = `nobody${path}use${text}md5forencrypt`
@@ -249,6 +253,68 @@ async function streamFromProxy(
   return null
 }
 
+async function resolveNetEaseUrl(id: string): Promise<string | null> {
+  // Try EAPI
+  for (const br of [320000, 128000, 999000]) {
+    for (let retry = 0; retry < 2; retry++) {
+      try {
+        const params = eapiEncrypt("/api/song/enhance/player/url", { ids: `[${id}]`, br })
+        const res = await fetch("https://interface3.music.163.com/eapi/song/enhance/player/url", {
+          method: "POST",
+          headers: { ...UPSTREAM_HEADERS, "Content-Type": "application/x-www-form-urlencoded", "Cookie": "os=pc" },
+          body: `params=${encodeURIComponent(params)}`,
+          signal: AbortSignal.timeout(10000),
+        })
+        if (!res.ok) break
+        const data = await res.json()
+        const song = data.data?.[0]
+        if (!song?.url) break
+        const hasTrial = song.freeTrialInfo != null && typeof song.freeTrialInfo === "object" && !Array.isArray(song.freeTrialInfo) && Number((song.freeTrialInfo as Record<string, unknown>).end) > 0
+        if (hasTrial) break
+        return song.url.replace(/^http:\/\//, "https://")
+      } catch { if (retry < 1) await new Promise((r) => setTimeout(r, 400)) }
+    }
+  }
+
+  // Try Legacy
+  for (const suffix of ["", ".mp3"]) {
+    const url = `https://music.163.com/song/media/outer/url?id=${id}${suffix}`
+    try {
+      const res = await fetch(url, { headers: UPSTREAM_HEADERS, redirect: "follow", signal: AbortSignal.timeout(8000) })
+      if (res.ok) {
+        const ct = (res.headers.get("content-type") || "").toLowerCase()
+        if (ct.includes("audio") || ct.includes("mpeg") || ct.includes("octet-stream")) return res.url
+      }
+    } catch {}
+  }
+
+  // Try community proxy APIs
+  const PROXY_APIS = [
+    `https://api.baka.plus/meting/?type=url&id=${id}&br=320`,
+    `https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=${id}&br=320`,
+    `https://api.qijieya.cn/meting/?type=url&id=${id}`,
+  ]
+  for (const apiUrl of PROXY_APIS) {
+    try {
+      const res = await fetch(apiUrl, {
+        headers: { "User-Agent": UPSTREAM_HEADERS["User-Agent"] },
+        redirect: "manual",
+        signal: AbortSignal.timeout(8000),
+      })
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get("location")
+        if (loc) return loc.startsWith("http") ? loc : `https://${loc}`
+        continue
+      }
+      const text = await res.text()
+      if (text.startsWith("http") && text.length < 500) return text.trim()
+      try { const j = JSON.parse(text); if (j.url) return j.url } catch {}
+    } catch {}
+  }
+
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get("id")
@@ -256,27 +322,42 @@ export async function GET(request: NextRequest) {
     return new Response(null, { status: 400 })
   }
 
-  // Priority 1: EAPI
-  const eapiResult = await streamFromEAPI(id, request)
-  if (eapiResult) {
-    eapiResult.headers.set("X-Audio-Source", "netease-eapi")
-    return eapiResult
+  // Check cache for Range/seek requests
+  const cached = urlCache.get(id)
+  if (cached && Date.now() - cached.time < URL_CACHE_TTL) {
+    const result = await streamFromCDN(cached.url, request)
+    if (result) {
+      result.headers.set("X-Audio-Source", "cache")
+      result.headers.set("X-Cache", "HIT")
+      return result
+    }
+    urlCache.delete(id)
   }
 
-  // Priority 2: Legacy URL
-  const legacyResult = await streamFromLegacy(id, request)
-  if (legacyResult) {
-    legacyResult.headers.set("X-Audio-Source", "netease-legacy")
-    return legacyResult
+  // Resolve URL (EAPI → Legacy → Proxy)
+  let source = "unknown"
+  let audioUrl = await resolveNetEaseUrl(id)
+  if (audioUrl) {
+    source = audioUrl.includes("music.163.com") ? "netease" : "community-proxy"
   }
 
-  // Priority 3: Community proxy APIs (unlock VIP songs)
-  const proxyResult = await streamFromProxy(id, request)
-  if (proxyResult) {
-    proxyResult.headers.set("X-Audio-Source", "community-proxy")
-    return proxyResult
+  if (!audioUrl) {
+    return new Response(null, { status: 404 })
   }
 
+  // Cache for future Range requests
+  urlCache.set(id, { url: audioUrl, time: Date.now() })
+  if (urlCache.size > 200) {
+    const oldest = [...urlCache.entries()].sort((a, b) => a[1].time - b[1].time)[0]
+    if (oldest) urlCache.delete(oldest[0])
+  }
+
+  const result = await streamFromCDN(audioUrl, request)
+  if (result) {
+    result.headers.set("X-Audio-Source", source)
+    return result
+  }
+  urlCache.delete(id)
   return new Response(null, { status: 404 })
 }
 

@@ -275,7 +275,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
               style={{ width: `${progress}%` }}
             />
             <div
-              className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-primary shadow"
+              className="absolute top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-primary shadow"
               style={{ left: `calc(${progress}% - 6px)` }}
             />
           </div>
