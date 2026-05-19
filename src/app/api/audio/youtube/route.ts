@@ -139,12 +139,14 @@ async function tryResolveAudioUrl(
         .replace(/[~～…\.]{2,}/g, " ")
         .replace(/\s+/g, " ")
         .trim()
+        .replace(/さん|くん|ちゃん|様|せんせい/gi, "")
     const ea = (expectArtist || "").toLowerCase().trim()
         .replace(/&/g, "and")
         .replace(/[･・]{2,}/g, " ")
         .replace(/[~～…\.]{2,}/g, " ")
         .replace(/\s+/g, " ")
         .trim()
+        .replace(/さん|くん|ちゃん|様|せんせい/gi, "")
 
     const isCover = (t: string) => /cover|カバー|covered|remix|リミックス|remixed|arrange|アレンジ|instrumental|インスト|off vocal|offvocal|カラオケ|karaoke/i.test(t)
 
