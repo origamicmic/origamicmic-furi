@@ -114,9 +114,17 @@ async function resolveAudioUrl(
 ): Promise<string | null> {
   await ensureClientId()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
+
+  // Clean query: strip unusual punctuations/repetitive chars, replace & with space
+  const cleanQuery = query
+    .replace(/&/g, " ")
+    .replace(/[･・]{2,}/g, " ")
+    .replace(/[~～…\.]{2,}/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
   try {
     const searchUrl =
-      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=5&client_id=${SC_CLIENT_ID}`
+      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(cleanQuery)}&limit=5&client_id=${SC_CLIENT_ID}`
     const searchRes = await scFetch(searchUrl, {
       headers: SC_API_HEADERS,
       signal,
@@ -137,8 +145,18 @@ async function resolveAudioUrl(
     // Sort results by title similarity to the expected title
     if (expectTitle) {
       const et = expectTitle.toLowerCase().trim()
+          .replace(/[･・]{2,}/g, " ")
+          .replace(/[~～…\.]{2,}/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
       const ea = (expectArtist || "").toLowerCase().trim()
-      const cleanTitle = (t: string) => t.toLowerCase().trim().replace(/\s*[-~–—]\s*.*$/, "").trim()
+          .replace(/&/g, "and")
+          .replace(/[･・]{2,}/g, " ")
+          .replace(/[~～…\.]{2,}/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+
+      const isCover = (t: string) => /cover|カバー|covered|remix|リミックス|remixed|arrange|アレンジ|instrumental|インスト|off vocal|offvocal|カラオケ|karaoke/i.test(t)
       const scoreTitle = (t: string, u: string) => {
         const tl = t.toLowerCase().trim()
         const ul = u.toLowerCase()
@@ -147,8 +165,7 @@ async function resolveAudioUrl(
         if (tl === et) { score += 50 }
         else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " –") || tl.startsWith(et + " ~")) { score += 45 }
         else if (tl.startsWith(et + " (")) { score += 40 }
-        else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) { score += 25 } // penalty for mixed titles
-        else if (cleanTitle(tl) === et) { score += 24 }
+        else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) { score += 25 }
         else if (tl.includes(et)) { score += 15 }
         const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
         score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 5, 15)
@@ -156,7 +173,11 @@ async function resolveAudioUrl(
         if (ea) {
           if (ul.includes(ea)) score += 30
           else if (ea.split(/\s+/).some((w) => w.length >= 2 && ul.includes(w))) score += 10
+          // Bonus: artist name appears in title (original artist credit)
+          if (tl.includes(ea)) score += 25
         }
+        // Penalize covers/remixes/instrumentals
+        if (isCover(tl)) score -= 20
         return score
       }
       ;(collection as Record<string, unknown>[]).sort((a, b) => {
