@@ -110,6 +110,7 @@ async function tryResolveAudioUrl(
   searchQuery: string,
   expectTitle: string | null,
   expectArtist: string | null,
+  durationMs: number | null,
   diag?: Record<string, unknown>
 ): Promise<string | null> {
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
@@ -131,7 +132,7 @@ async function tryResolveAudioUrl(
     return null
   }
 
-  // Sort results by title similarity to the expected title
+  // Gate-based filtering: API order, mandatory title+duration, display-only scoring
   if (expectTitle) {
     const et = expectTitle.toLowerCase().trim()
         .replace(/[･・]{2,}/g, " ")
@@ -146,41 +147,59 @@ async function tryResolveAudioUrl(
         .trim()
 
     const isCover = (t: string) => /cover|カバー|covered|remix|リミックス|remixed|arrange|アレンジ|instrumental|インスト|off vocal|offvocal|カラオケ|karaoke/i.test(t)
-    const scoreTitle = (t: string, u: string) => {
-      const tl = t.toLowerCase().trim()
-      const ul = u.toLowerCase()
+
+    const makeEntry = (track: Record<string, unknown>) => {
+      const tl = String(track.title || "").toLowerCase().trim()
+      const ul = String((track.user as Record<string, unknown>)?.username || "").toLowerCase()
+      const td = Number(track.duration)
+      const titleOk = tl.includes(et)
+      const durOk = !durationMs || !td || Math.abs(td - durationMs) / durationMs <= 0.30
+
+      // Display-only score
       let score = 0
-      if (tl === et) { score += 50 }
-      else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " –") || tl.startsWith(et + " ~")) { score += 45 }
-      else if (tl.startsWith(et + " (")) { score += 40 }
-      else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) { score += 25 }
-      else if (tl.includes(et)) { score += 15 }
-      const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
-      score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 5, 15)
+      if (tl === et) score += 50
+      else if (tl.startsWith(et + " ") || tl.startsWith(et + " -")) score += 45
+      else if (tl.startsWith(et + " (")) score += 40
+      else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) score += 25
+      else if (tl.includes(et)) score += 15
+      // Artist signal
       if (ea) {
-        if (ul.includes(ea)) score += 30
-        else if (ea.split(/\s+/).some((w) => w.length >= 2 && ul.includes(w))) score += 10
-        if (tl.includes(ea)) score += 25
+        const artistInTitle = tl.includes(ea)
+        if (artistInTitle) score += 30
+        else if (ul.includes(ea)) score += 10
+        // Conditional cover penalty: only if expected artist NOT in title
+        if (isCover(tl) && !artistInTitle) score -= 30
+      } else if (isCover(tl)) {
+        score -= 15  // lighter penalty without artist context
       }
-      if (isCover(tl)) score -= 20
-      return score
+      // Duration bonus
+      if (durationMs && td) {
+        const ratio = Math.abs(td - durationMs) / durationMs
+        if (ratio <= 0.05) score += 25
+        else if (ratio <= 0.15) score += 10
+      }
+
+      const passGate = titleOk && durOk
+      return { track, tl, ul, td, score, passGate, titleOk, durOk }
     }
-    ;(collection as Record<string, unknown>[]).sort((a, b) => {
-      return scoreTitle(String(b.title || ""), String(b.user?.username || "")) -
-             scoreTitle(String(a.title || ""), String(a.user?.username || ""))
-    })
+
+    // Build scored entries in API order
+    const entries = (collection as Record<string, unknown>[]).map(makeEntry)
     if (diag) {
-      diag.sortedByTitle = expectTitle
-      diag.artistHint = ea || null
-      diag.searchScores = (collection as Record<string, unknown>[]).slice(0, 5).map((t) => ({
-        title: String(t.title || "").slice(0, 50),
-        user: String((t.user as Record<string, unknown>)?.username || ""),
-        score: scoreTitle(String(t.title || ""), String((t.user as Record<string, unknown>)?.username || "")),
+      diag.searchScores = entries.slice(0, 5).map((e) => ({
+        title: e.tl.slice(0, 50),
+        user: e.ul,
+        score: e.score,
+        gate: e.passGate ? "pass" : `fail_${e.titleOk ? "" : "title"}${e.titleOk && !e.durOk ? "dur" : ""}`,
       }))
     }
+
+    // Filter by gate, keep API order
+    const gated = entries.filter((e) => e.passGate).map((e) => e.track)
+    return extractProgressive(gated, diag)
   }
 
-  // Extract progressive audio from the sorted collection
+  // No expected title: use all results as-is
   return extractProgressive(collection, diag)
 }
 
@@ -262,6 +281,7 @@ async function resolveAudioUrl(
   query: string,
   expectTitle: string | null,
   expectArtist: string | null,
+  durationMs: number | null,
   diag?: Record<string, unknown>
 ): Promise<string | null> {
   await ensureClientId()
@@ -274,7 +294,7 @@ async function resolveAudioUrl(
     .trim()
 
   // First attempt: full query
-  let result = await tryResolveAudioUrl(cleanQuery, expectTitle, expectArtist, diag)
+  let result = await tryResolveAudioUrl(cleanQuery, expectTitle, expectArtist, durationMs, diag)
   // If the best match has score <= 5 (essentially no match), retry with title-only
   const hasLowScore = result && diag?.searchScores &&
     (diag.searchScores as Array<{ score: number }>).every((s) => s.score <= 5)
@@ -284,13 +304,13 @@ async function resolveAudioUrl(
   if (expectTitle && expectArtist && hasLowScore) {
     console.warn(`[fallback] sc low-scoring results, retrying with title-only: ${expectTitle}`)
     if (diag) { diag.retryQuery = expectTitle; diag.step = null; diag.searchScores = null }
-    result = await tryResolveAudioUrl(expectTitle, expectTitle, null, diag)
+    result = await tryResolveAudioUrl(expectTitle, expectTitle, null, durationMs, diag)
     if (result) return result
   } else if (!result && expectTitle && expectArtist) {
     const simpleQuery = expectTitle
     console.warn(`[fallback] sc retrying with title-only: ${simpleQuery}`)
     if (diag) { diag.retryQuery = simpleQuery; diag.step = null }
-    result = await tryResolveAudioUrl(simpleQuery, expectTitle, null, diag)
+    result = await tryResolveAudioUrl(simpleQuery, expectTitle, null, durationMs, diag)
     if (result) return result
   }
 
@@ -304,7 +324,7 @@ async function resolveAudioUrl(
     if (coreTitle !== cleanQuery && coreTitle.length >= 2) {
       console.warn(`[fallback] sc last resort: ${coreTitle}`)
       if (diag) { diag.retryQuery = coreTitle; diag.step = null }
-      result = await tryResolveAudioUrl(coreTitle, expectTitle, expectArtist, diag)
+      result = await tryResolveAudioUrl(coreTitle, expectTitle, expectArtist, durationMs, diag)
       if (result) return result
     }
   }
@@ -370,6 +390,7 @@ export async function GET(request: NextRequest) {
   const q = searchParams.get("q")
   const title = searchParams.get("title")
   const artist = searchParams.get("artist")
+  const dur = searchParams.get("dur")
   const debug = searchParams.get("debug")
   if (!q || q.trim().length === 0) {
     return new Response(null, { status: 400 })
@@ -387,7 +408,8 @@ export async function GET(request: NextRequest) {
       return Response.json(diag, { status: 404 })
     }
 
-    const audioUrl = await resolveAudioUrl(q.trim(), title?.trim() || null, artist?.trim() || null, diag)
+    const durationMs = dur ? Number(dur) : null
+    const audioUrl = await resolveAudioUrl(q.trim(), title?.trim() || null, artist?.trim() || null, durationMs, diag)
     diag.audioUrlResolved = !!audioUrl
     if (!audioUrl) {
       diag.error = "no_audio_url"

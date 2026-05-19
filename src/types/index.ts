@@ -30,6 +30,7 @@ export interface SongResult {
   artist: string
   source: string
   thumbnail?: string
+  duration?: number
 }
 
 export interface SearchResult {

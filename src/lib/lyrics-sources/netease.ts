@@ -48,6 +48,7 @@ export class NeteaseSource implements LyricsSource {
         ?.map((a: Record<string, string>) => a.name)
         .join(", ") ?? "Unknown",
       source: this.name,
+      duration: typeof song.duration === "number" ? song.duration : undefined,
     }))
   }
 

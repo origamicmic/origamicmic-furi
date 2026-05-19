@@ -208,7 +208,8 @@ export default function Home() {
         const q = encodeURIComponent(`${song.title} ${song.artist}`)
         const t = encodeURIComponent(song.title)
         const a = encodeURIComponent(song.artist)
-        const soundcloudUrl = `/api/audio/youtube?q=${q}&title=${t}&artist=${a}`
+        const dur = song.duration ? `&dur=${song.duration}` : ""
+        const soundcloudUrl = `/api/audio/youtube?q=${q}&title=${t}&artist=${a}${dur}`
         setAudioTitle(song.title)
         setAudioArtist(song.artist)
 
