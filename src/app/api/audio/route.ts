@@ -62,11 +62,11 @@ async function streamFromCDN(
       const range = request.headers.get("range")
       if (range) headers["Range"] = range
 
-      const res = await fetch(url, {
-        headers,
-        redirect: "follow",
-        signal: AbortSignal.timeout(3000),
-      })
+      // Connection timeout only — body streaming is not limited
+      const controller = new AbortController()
+      const connectTimeout = setTimeout(() => controller.abort(), 15000)
+      const res = await fetch(url, { headers, redirect: "follow", signal: controller.signal })
+      clearTimeout(connectTimeout)
 
       if (!res.ok) {
         console.warn(`[audio] CDN fetch HTTP ${res.status} for ${url.slice(0, 80)}`)

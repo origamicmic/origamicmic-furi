@@ -360,11 +360,14 @@ async function streamAudio(
     const range = request.headers.get("range")
     if (range) reqHeaders["Range"] = range
 
+    const controller = new AbortController()
+    const connectTimeout = setTimeout(() => controller.abort(), 15000)
     const res = await scFetch(audioUrl, {
       headers: reqHeaders,
       redirect: "follow",
-      signal: AbortSignal.timeout(STREAM_TIMEOUT),
+      signal: controller.signal,
     })
+    clearTimeout(connectTimeout)
 
     if (!res.ok) {
       console.warn(`[fallback] sc stream HTTP ${res.status}`)

@@ -157,11 +157,14 @@ async function streamAudio(audioUrl: string, request: NextRequest): Promise<Resp
     const range = request.headers.get("range")
     if (range) reqHeaders["Range"] = range
 
+    const controller = new AbortController()
+    const connectTimeout = setTimeout(() => controller.abort(), 15000)
     const res = await fetch(audioUrl, {
       headers: reqHeaders,
       redirect: "follow",
-      signal: AbortSignal.timeout(STREAM_TIMEOUT),
+      signal: controller.signal,
     })
+    clearTimeout(connectTimeout)
 
     if (!res.ok) {
       console.warn(`[qq] stream HTTP ${res.status}`)
