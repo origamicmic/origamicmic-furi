@@ -153,11 +153,13 @@ async function tryResolveAudioUrl(
       const ul = String((track.user as Record<string, unknown>)?.username || "").toLowerCase()
       const td = Number(track.duration)
 
-      // Title gate: full substring OR at least 2 words (3+ chars) from expectTitle
+      // Title gate: full substring OR word-level match across title+user
       const titleFull = tl.includes(et)
+      const fullText = (tl + " " + ul).toLowerCase()
       const etWords = et.split(/\s+/).filter((w) => w.length >= 3)
-      const titleWordMatch = etWords.length >= 2 && etWords.filter((w) => tl.includes(w)).length >= 2
-      const titleOk = titleFull || titleWordMatch
+      const wordMatches = etWords.filter((w) => fullText.includes(w)).length
+      const titleWordOk = etWords.length >= 2 ? wordMatches >= 2 : wordMatches >= 1
+      const titleOk = titleFull || titleWordOk
       const durOk = !durationMs || !td || Math.abs(td - durationMs) / durationMs <= 0.30
 
       // Display-only score
@@ -167,15 +169,18 @@ async function tryResolveAudioUrl(
       else if (tl.startsWith(et + " (")) score += 40
       else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) score += 25
       else if (tl.includes(et)) score += 15
+      else if (titleWordOk) score += 5  // word-only match is weaker
       // Artist signal
       if (ea) {
         const artistInTitle = tl.includes(ea)
         if (artistInTitle) score += 30
         else if (ul.includes(ea)) score += 10
-        // Conditional cover penalty: only if expected artist NOT in title
-        if (isCover(tl) && !artistInTitle) score -= 30
+        // Conditional cover penalty
+        if (isCover(tl)) {
+          score -= artistInTitle ? 15 : 30  // lighter if artist credited
+        }
       } else if (isCover(tl)) {
-        score -= 15  // lighter penalty without artist context
+        score -= 15
       }
       // Duration bonus
       if (durationMs && td) {
