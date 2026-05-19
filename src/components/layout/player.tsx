@@ -267,7 +267,7 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
         <div className="mt-0.5 flex items-center gap-2">
           <div
             ref={barRef}
-            className="relative h-2 flex-1 cursor-pointer overflow-hidden rounded-full bg-border/60"
+            className="relative h-2 flex-1 cursor-pointer rounded-full bg-border/60"
             onPointerDown={onPointerDown}
           >
             <div
@@ -275,8 +275,8 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
               style={{ width: `${progress}%` }}
             />
             <div
-              className="absolute top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-primary shadow"
-              style={{ left: `calc(${progress}% - 6px)` }}
+              className="absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-primary shadow-md ring-2 ring-background"
+              style={{ left: `calc(${progress}% - 10px)` }}
             />
           </div>
           <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0">
