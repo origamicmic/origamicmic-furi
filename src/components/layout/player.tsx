@@ -275,8 +275,8 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
               style={{ width: `${progress}%` }}
             />
             <div
-              className="absolute top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-primary shadow-md ring-2 ring-background"
-              style={{ left: `calc(${progress}% - 10px)` }}
+              className="absolute top-1/2 -translate-y-1/2 h-[14px] w-[14px] rounded-full bg-primary shadow-md ring-1 ring-background"
+              style={{ left: `calc(${progress}% - 7px)` }}
             />
           </div>
           <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0">

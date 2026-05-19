@@ -38,12 +38,12 @@ export function Header({ onHomeClick }: HeaderProps) {
           className="group flex cursor-pointer items-center gap-2 border-none bg-transparent p-0 transition-transform hover:scale-[1.02]"
         >
           <span
-            className="text-2xl font-bold tracking-[0.08em] text-[oklch(0.5_0.08_40)] transition-colors group-hover:text-[oklch(0.55_0.1_40)] dark:text-[oklch(0.7_0.08_40)] dark:group-hover:text-[oklch(0.75_0.1_40)]"
+            className="text-[clamp(1.1rem,4.5vw,1.5rem)] font-bold tracking-[0.08em] text-[oklch(0.5_0.08_40)] transition-colors group-hover:text-[oklch(0.55_0.1_40)] dark:text-[oklch(0.7_0.08_40)] dark:group-hover:text-[oklch(0.75_0.1_40)]"
             style={{ textShadow: "1px 1px 0 oklch(0.85_0.02_60 / 0.5)" }}
           >
             Origamicmic Furi
           </span>
-          <span               className="hidden text-sm tracking-[0.1em] text-muted-foreground/50 sm:inline-block">
+          <span className="hidden text-[clamp(0.7rem,2vw,0.875rem)] tracking-[0.1em] text-muted-foreground/50 sm:inline-block">
               {"/"}
               {" "}
               lyrics furigana

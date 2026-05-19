@@ -16,13 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://furi.tomori.fyi/"),
-  icons: {
-    icon: [
-      { url: "/favicon.ico", sizes: "48x48" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-    ],
-    apple: "/icon.svg",
-  },
+  icons: "/icon.svg",
   title: {
     default: "Origamicmic Furi | 日语歌词注音 · 罗马音转换",
     template: "%s | Origamicmic Furi",
