@@ -317,6 +317,11 @@ export async function GET(request: NextRequest) {
       return debug ? Response.json(diag, { status: 404 }) : new Response(null, { status: 404 })
     }
 
+    if (debug) {
+      diag.error = null
+      return Response.json(diag, { status: 200 })
+    }
+
     const result = await streamAudio(audioUrl, request)
     if (!result) {
       diag.error = "stream_failed"
