@@ -152,7 +152,12 @@ async function tryResolveAudioUrl(
       const tl = String(track.title || "").toLowerCase().trim()
       const ul = String((track.user as Record<string, unknown>)?.username || "").toLowerCase()
       const td = Number(track.duration)
-      const titleOk = tl.includes(et)
+
+      // Title gate: full substring OR at least 2 words (3+ chars) from expectTitle
+      const titleFull = tl.includes(et)
+      const etWords = et.split(/\s+/).filter((w) => w.length >= 3)
+      const titleWordMatch = etWords.length >= 2 && etWords.filter((w) => tl.includes(w)).length >= 2
+      const titleOk = titleFull || titleWordMatch
       const durOk = !durationMs || !td || Math.abs(td - durationMs) / durationMs <= 0.30
 
       // Display-only score
@@ -179,8 +184,10 @@ async function tryResolveAudioUrl(
         else if (ratio <= 0.15) score += 10
       }
 
-      const passGate = titleOk && durOk
-      return { track, tl, ul, td, score, passGate, titleOk, durOk }
+      const gateLabel = titleOk && durOk ? "pass" :
+        !titleOk && !durOk ? "fail_title+dur" :
+        !titleOk ? "fail_title" : "fail_dur"
+      return { track, tl, ul, td, score, passGate: titleOk && durOk, titleOk, durOk, gateLabel }
     }
 
     // Build scored entries in API order
@@ -190,12 +197,12 @@ async function tryResolveAudioUrl(
         title: e.tl.slice(0, 50),
         user: e.ul,
         score: e.score,
-        gate: e.passGate ? "pass" : `fail_${e.titleOk ? "" : "title"}${e.titleOk && !e.durOk ? "dur" : ""}`,
+        gate: e.gateLabel,
       }))
     }
 
-    // Filter by gate, keep API order
-    const gated = entries.filter((e) => e.passGate).map((e) => e.track)
+    // Filter by gate, then sort by score within gate-passers
+    const gated = entries.filter((e) => e.passGate).sort((a, b) => b.score - a.score).map((e) => e.track)
     return extractProgressive(gated, diag)
   }
 
@@ -297,7 +304,7 @@ async function resolveAudioUrl(
   let result = await tryResolveAudioUrl(cleanQuery, expectTitle, expectArtist, durationMs, diag)
   // If the best match has score <= 5 (essentially no match), retry with title-only
   const hasLowScore = result && diag?.searchScores &&
-    (diag.searchScores as Array<{ score: number }>).every((s) => s.score <= 5)
+    (diag.searchScores as Array<{ score: number }>).every((s) => s.score <= 20)
 
   if (result && !hasLowScore) return result
 
