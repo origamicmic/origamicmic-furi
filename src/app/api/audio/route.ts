@@ -258,15 +258,24 @@ export async function GET(request: NextRequest) {
 
   // Priority 1: EAPI
   const eapiResult = await streamFromEAPI(id, request)
-  if (eapiResult) return eapiResult
+  if (eapiResult) {
+    eapiResult.headers.set("X-Audio-Source", "netease-eapi")
+    return eapiResult
+  }
 
   // Priority 2: Legacy URL
   const legacyResult = await streamFromLegacy(id, request)
-  if (legacyResult) return legacyResult
+  if (legacyResult) {
+    legacyResult.headers.set("X-Audio-Source", "netease-legacy")
+    return legacyResult
+  }
 
   // Priority 3: Community proxy APIs (unlock VIP songs)
   const proxyResult = await streamFromProxy(id, request)
-  if (proxyResult) return proxyResult
+  if (proxyResult) {
+    proxyResult.headers.set("X-Audio-Source", "community-proxy")
+    return proxyResult
+  }
 
   return new Response(null, { status: 404 })
 }
