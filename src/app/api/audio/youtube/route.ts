@@ -106,7 +106,7 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
   })
 }
 
-async function resolveAudioUrl(query: string): Promise<string | null> {
+async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): Promise<string | null> {
   await ensureClientId()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
@@ -118,27 +118,32 @@ async function resolveAudioUrl(query: string): Promise<string | null> {
     })
     if (!searchRes.ok) {
       console.warn(`[fallback] sc search HTTP ${searchRes.status}`)
+      if (diag) { diag.step = "search_http"; diag.status = searchRes.status }
       return null
     }
     const searchData = await searchRes.json() as Record<string, unknown>
     const collection = searchData.collection as Record<string, unknown>[] | undefined
     if (!collection || collection.length === 0) {
       console.warn("[fallback] sc no results")
+      if (diag) { diag.step = "search_empty" }
       return null
     }
     const track = collection[0]
     console.warn(`[fallback] sc found: ${String(track.title || "").slice(0, 50)}`)
+    if (diag) { diag.foundTrack = String(track.title || "").slice(0, 60) }
 
     const media = track.media as Record<string, unknown> | undefined
     const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
     if (!transcodings || transcodings.length === 0) {
       console.warn("[fallback] sc no transcodings")
+      if (diag) { diag.step = "no_transcodings" }
       return null
     }
     const prog = transcodings.find(
       (t: Record<string, unknown>) =>
         typeof t.format?.protocol === "string" && t.format.protocol === "progressive"
     ) || transcodings[0]
+    if (diag) { diag.transcodeProtocol = String(prog.format?.protocol || "unknown") }
     const transcodeUrl = String(prog.url || "")
 
     const transcodeRes = await scFetch(`${transcodeUrl}?client_id=${SC_CLIENT_ID}`, {
@@ -147,18 +152,21 @@ async function resolveAudioUrl(query: string): Promise<string | null> {
     })
     if (!transcodeRes.ok) {
       console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status}`)
+      if (diag) { diag.step = "transcode_http"; diag.status = transcodeRes.status }
       return null
     }
     const transcodeData = await transcodeRes.json() as Record<string, unknown>
     const audioUrl = transcodeData.url as string | undefined
     if (!audioUrl) {
       console.warn("[fallback] sc no audio url in transcode")
+      if (diag) { diag.step = "transcode_no_url" }
       return null
     }
     console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
     return audioUrl
   } catch (err) {
     console.warn(`[fallback] sc error: ${err instanceof Error ? err.message : String(err)}`)
+    if (diag) { diag.step = "exception"; diag.errorMsg = err instanceof Error ? err.message : String(err) }
     return null
   }
 }
@@ -235,7 +243,7 @@ export async function GET(request: NextRequest) {
       return Response.json(diag, { status: 404 })
     }
 
-    const audioUrl = await resolveAudioUrl(q.trim())
+    const audioUrl = await resolveAudioUrl(q.trim(), diag)
     diag.audioUrlResolved = !!audioUrl
     if (!audioUrl) {
       diag.error = "no_audio_url"
