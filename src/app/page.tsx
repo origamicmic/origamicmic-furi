@@ -231,7 +231,19 @@ export default function Home() {
 
   return (
       <div className="flex min-h-full flex-col bg-background">
-      <Header onHomeClick={handleReset} audioUrl={audioUrl} audioFallbackUrl={audioFallbackUrl} audioTitle={audioTitle} audioArtist={audioArtist} hidePlayer={isNarrow && hasLyrics} />
+      <Header onHomeClick={handleReset} />
+
+      {/* Single Player instance - CSS-only layout switch on resize */}
+      {audioUrl && audioTitle && (
+        <div className={cn(
+          "z-50",
+          isNarrow && hasLyrics
+            ? "flex justify-center"
+            : "fixed top-2 left-1/2 -translate-x-1/2"
+        )}>
+          <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
+        </div>
+      )}
 
       {showBackTop && (
         <button

@@ -111,7 +111,7 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
     const searchUrl =
-      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=3&client_id=${SC_CLIENT_ID}`
+      `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&limit=5&client_id=${SC_CLIENT_ID}`
     const searchRes = await scFetch(searchUrl, {
       headers: SC_API_HEADERS,
       signal,
@@ -172,6 +172,38 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
           continue
         }
         console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
+        return audioUrl
+      }
+    }
+    // Second pass: progressive failed on all results, try non-DRM non-progressive
+    console.warn("[fallback] sc progressive exhausted, trying non-progressive")
+    for (let ti = 0; ti < collection.length; ti++) {
+      const track = collection[ti]
+      const media = track.media as Record<string, unknown> | undefined
+      const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
+      if (!transcodings || transcodings.length === 0) continue
+
+      for (const tcEntry of transcodings) {
+        const protocol = String((tcEntry as Record<string, unknown>).format?.protocol || "")
+        // Skip progressive (already tried), encrypted/DRM, and empty URLs
+        if (protocol === "progressive") continue
+        if (protocol.includes("encrypted") || protocol.includes("cbc") || protocol.includes("ctr")) continue
+        const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
+        if (!tcUrl) continue
+        // Skip known streaming/HLS CDN URLs
+        if (tcUrl.includes("playback.media-streaming")) continue
+
+        console.warn(`[fallback] sc trying ${protocol}: ${tcUrl.slice(0, 60)}`)
+        const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
+          headers: SC_API_HEADERS,
+          signal: AbortSignal.timeout(SEARCH_TIMEOUT),
+        })
+        if (!transcodeRes.ok) continue
+        const transcodeData = await transcodeRes.json() as Record<string, unknown>
+        const audioUrl = transcodeData.url as string | undefined
+        if (!audioUrl) continue
+        if (audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) continue
+        console.warn(`[fallback] sc audio (fallback): ${audioUrl.slice(0, 80)}`)
         return audioUrl
       }
     }
