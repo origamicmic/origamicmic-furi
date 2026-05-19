@@ -163,7 +163,15 @@ async function resolveAudioUrl(
         return scoreTitle(String(b.title || ""), String(b.user?.username || "")) -
                scoreTitle(String(a.title || ""), String(a.user?.username || ""))
       })
-      if (diag) { diag.sortedByTitle = expectTitle }
+      if (diag) {
+        diag.sortedByTitle = expectTitle
+        diag.artistHint = ea || null
+        diag.searchScores = (collection as Record<string, unknown>[]).slice(0, 5).map((t) => ({
+          title: String(t.title || "").slice(0, 50),
+          user: String((t.user as Record<string, unknown>)?.username || ""),
+          score: scoreTitle(String(t.title || ""), String((t.user as Record<string, unknown>)?.username || "")),
+        }))
+      }
     }
     for (let ti = 0; ti < collection.length; ti++) {
       const track = collection[ti]
