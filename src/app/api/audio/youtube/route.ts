@@ -275,10 +275,18 @@ async function resolveAudioUrl(
 
   // First attempt: full query
   let result = await tryResolveAudioUrl(cleanQuery, expectTitle, expectArtist, diag)
-  if (result) return result
+  // If the best match has score <= 5 (essentially no match), retry with title-only
+  const hasLowScore = result && diag?.searchScores &&
+    (diag.searchScores as Array<{ score: number }>).every((s) => s.score <= 5)
 
-  // If no results or all scores 0, retry with simplified query
-  if (expectTitle && expectArtist) {
+  if (result && !hasLowScore) return result
+
+  if (expectTitle && expectArtist && hasLowScore) {
+    console.warn(`[fallback] sc low-scoring results, retrying with title-only: ${expectTitle}`)
+    if (diag) { diag.retryQuery = expectTitle; diag.step = null; diag.searchScores = null }
+    result = await tryResolveAudioUrl(expectTitle, expectTitle, null, diag)
+    if (result) return result
+  } else if (!result && expectTitle && expectArtist) {
     const simpleQuery = expectTitle
     console.warn(`[fallback] sc retrying with title-only: ${simpleQuery}`)
     if (diag) { diag.retryQuery = simpleQuery; diag.step = null }
