@@ -1,7 +1,4 @@
 import { NextRequest } from "next/server"
-import { createRequire } from "node:module"
-
-const require = createRequire(import.meta.url)
 
 const SC_PROXY = (process.env.SC_PROXY || "").trim()
 
@@ -20,11 +17,11 @@ const SC_FALLBACK_CLIENT_ID = "5gMqC97v0l66zeEvGFHnZzO3hIi1xpUX"
 let SC_CLIENT_ID = ""
 let SC_INIT_PROMISE: Promise<void> | null = null
 
-function scFetch(input: string, init?: RequestInit): Promise<Response> {
+async function scFetch(input: string, init?: RequestInit): Promise<Response> {
   if (SC_PROXY) {
     try {
-      const { ProxyAgent } = require("undici")
-      return fetch(input, { ...init, dispatcher: new ProxyAgent(SC_PROXY) } as RequestInit)
+      const undici = await import("undici")
+      return fetch(input, { ...init, dispatcher: new undici.ProxyAgent(SC_PROXY) } as RequestInit)
     } catch (e) {
       console.warn(`[fallback] sc proxy init failed: ${e instanceof Error ? e.message : String(e)}`)
     }
@@ -221,20 +218,40 @@ async function streamAudio(
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get("q")
+  const debug = searchParams.get("debug")
   if (!q || q.trim().length === 0) {
     return new Response(null, { status: 400 })
   }
 
+  const diag: Record<string, unknown> = { query: q.trim() }
   try {
+    const t0 = Date.now()
+    await ensureClientId().catch(() => {})
+    diag.clientIdReady = !!SC_CLIENT_ID
+    diag.clientIdTime = Date.now() - t0
+
+    if (!SC_CLIENT_ID) {
+      diag.error = "no_client_id"
+      return Response.json(diag, { status: 404 })
+    }
+
     const audioUrl = await resolveAudioUrl(q.trim())
-    if (!audioUrl) return new Response(null, { status: 404 })
+    diag.audioUrlResolved = !!audioUrl
+    if (!audioUrl) {
+      diag.error = "no_audio_url"
+      return debug ? Response.json(diag, { status: 404 }) : new Response(null, { status: 404 })
+    }
 
     const result = await streamAudio(audioUrl, request)
-    if (!result) return new Response(null, { status: 404 })
+    if (!result) {
+      diag.error = "stream_failed"
+      return debug ? Response.json(diag, { status: 404 }) : new Response(null, { status: 404 })
+    }
 
     return result
-  } catch {
-    return new Response(null, { status: 500 })
+  } catch (err) {
+    diag.error = `exception: ${err instanceof Error ? err.message : String(err)}`
+    return debug ? Response.json(diag, { status: 500 }) : new Response(null, { status: 500 })
   }
 }
 
