@@ -128,61 +128,55 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
       if (diag) { diag.step = "search_empty" }
       return null
     }
-    const track = collection[0]
-    console.warn(`[fallback] sc found: ${String(track.title || "").slice(0, 50)}`)
-    if (diag) { diag.foundTrack = String(track.title || "").slice(0, 60); diag.trackId = String(track.id || "") }
 
-    const media = track.media as Record<string, unknown> | undefined
-    const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
-    if (!transcodings || transcodings.length === 0) {
-      console.warn("[fallback] sc no transcodings")
-      if (diag) { diag.step = "no_transcodings" }
-      return null
-    }
-
-    // Only use progressive (non-DRM, non-HLS) transcodings
-    const progressiveTc = transcodings.filter(
-      (t: Record<string, unknown>) =>
-        typeof t.format?.protocol === "string" && t.format.protocol === "progressive"
-    )
-    if (progressiveTc.length === 0) {
-      console.warn("[fallback] sc no progressive transcoding")
-      if (diag) { diag.step = "no_progressive"; diag.protocols = transcodings.map((t: Record<string, unknown>) => String(t.format?.protocol || "?")) }
-      return null
-    }
-    if (diag) { diag.transcodeProtocol = "progressive"; diag.transcodingsTotal = transcodings.length; diag.progressiveCount = progressiveTc.length }
-
-    let audioUrl: string | undefined
-    for (const tcEntry of progressiveTc) {
-      const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
-      if (!tcUrl) continue
-      const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
-        headers: SC_API_HEADERS,
-        signal: AbortSignal.timeout(SEARCH_TIMEOUT),
-      })
-      if (!transcodeRes.ok) {
-        console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status} for ${tcUrl.slice(0, 60)}`)
-        if (diag) { diag.transcodeUrl = tcUrl.slice(0, 120); diag.step = "transcode_http"; diag.status = transcodeRes.status }
-        continue
+    // Try each search result until one yields a playable progressive audio URL
+    for (let ti = 0; ti < collection.length; ti++) {
+      const track = collection[ti]
+      console.warn(`[fallback] sc track ${ti + 1}: ${String(track.title || "").slice(0, 50)}`)
+      if (diag) {
+        diag.foundTrack = String(track.title || "").slice(0, 60)
+        diag.trackId = String(track.id || "")
+        diag.trackIndex = ti
       }
-      const transcodeData = await transcodeRes.json() as Record<string, unknown>
-      audioUrl = transcodeData.url as string | undefined
-      if (!audioUrl) continue
-      // Verify it's not an HLS manifest (some progressive labels still return HLS)
-      if (audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) {
-        console.warn(`[fallback] sc skipping HLS/streaming URL: ${audioUrl.slice(0, 60)}`)
-        audioUrl = undefined
-        continue
+
+      const media = track.media as Record<string, unknown> | undefined
+      const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
+      if (!transcodings || transcodings.length === 0) continue
+
+      // Only use progressive (non-DRM, non-HLS) transcodings
+      const progressiveTc = transcodings.filter(
+        (t: Record<string, unknown>) =>
+          typeof t.format?.protocol === "string" && t.format.protocol === "progressive"
+      )
+      if (progressiveTc.length === 0) continue
+      if (diag) { diag.transcodeProtocol = "progressive"; diag.transcodingsTotal = transcodings.length; diag.progressiveCount = progressiveTc.length }
+
+      for (const tcEntry of progressiveTc) {
+        const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
+        if (!tcUrl) continue
+        const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
+          headers: SC_API_HEADERS,
+          signal: AbortSignal.timeout(SEARCH_TIMEOUT),
+        })
+        if (!transcodeRes.ok) {
+          console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status} for ${tcUrl.slice(0, 60)}`)
+          if (diag) { diag.transcodeUrl = tcUrl.slice(0, 120); diag.step = "transcode_http"; diag.status = transcodeRes.status }
+          continue
+        }
+        const transcodeData = await transcodeRes.json() as Record<string, unknown>
+        const audioUrl = transcodeData.url as string | undefined
+        if (!audioUrl) continue
+        // Verify it's not an HLS manifest (some progressive labels still return HLS)
+        if (audioUrl.includes("/hls") || audioUrl.includes("playback.media-streaming")) {
+          console.warn(`[fallback] sc skipping HLS/streaming URL: ${audioUrl.slice(0, 60)}`)
+          continue
+        }
+        console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
+        return audioUrl
       }
-      break
     }
-    if (!audioUrl) {
-      console.warn("[fallback] sc no audio url in transcode")
-      if (diag && !diag.step) { diag.step = "transcode_no_url" }
-      return null
-    }
-    console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
-    return audioUrl
+    if (diag && !diag.step) { diag.step = "all_tracks_failed" }
+    return null
   } catch (err) {
     console.warn(`[fallback] sc error: ${err instanceof Error ? err.message : String(err)}`)
     if (diag) { diag.step = "exception"; diag.errorMsg = err instanceof Error ? err.message : String(err) }
