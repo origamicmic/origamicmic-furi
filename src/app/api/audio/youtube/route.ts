@@ -15,7 +15,7 @@ const SC_API_HEADERS: Record<string, string> = {
   "Referer": "https://soundcloud.com/",
 }
 
-const SC_FALLBACK_CLIENT_ID = ""
+const SC_FALLBACK_CLIENT_ID = "5gMqC97v0l66zeEvGFHnZzO3hIi1xpUX"
 
 let SC_CLIENT_ID = ""
 let SC_INIT_PROMISE: Promise<void> | null = null
