@@ -130,7 +130,7 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
     }
     const track = collection[0]
     console.warn(`[fallback] sc found: ${String(track.title || "").slice(0, 50)}`)
-    if (diag) { diag.foundTrack = String(track.title || "").slice(0, 60) }
+    if (diag) { diag.foundTrack = String(track.title || "").slice(0, 60); diag.trackId = String(track.id || "") }
 
     const media = track.media as Record<string, unknown> | undefined
     const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
@@ -146,20 +146,28 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
     if (diag) { diag.transcodeProtocol = String(prog.format?.protocol || "unknown") }
     const transcodeUrl = String(prog.url || "")
 
-    const transcodeRes = await scFetch(`${transcodeUrl}?client_id=${SC_CLIENT_ID}`, {
-      headers: SC_API_HEADERS,
-      signal: AbortSignal.timeout(SEARCH_TIMEOUT),
-    })
-    if (!transcodeRes.ok) {
-      console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status}`)
-      if (diag) { diag.step = "transcode_http"; diag.status = transcodeRes.status }
-      return null
+    // Try progressive first, then fall back to other transcodings if 404
+    const transcodeOrder = [prog, ...transcodings.filter((t) => t !== prog)]
+    let audioUrl: string | undefined
+    for (const tcEntry of transcodeOrder) {
+      const tcUrl = String((tcEntry as Record<string, unknown>).url || "")
+      if (!tcUrl) continue
+      const transcodeRes = await scFetch(`${tcUrl}?client_id=${SC_CLIENT_ID}`, {
+        headers: SC_API_HEADERS,
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT),
+      })
+      if (!transcodeRes.ok) {
+        console.warn(`[fallback] sc transcode HTTP ${transcodeRes.status} for ${tcUrl.slice(0, 60)}`)
+        if (diag) { diag.transcodeUrl = tcUrl.slice(0, 120); diag.step = "transcode_http"; diag.status = transcodeRes.status }
+        continue
+      }
+      const transcodeData = await transcodeRes.json() as Record<string, unknown>
+      audioUrl = transcodeData.url as string | undefined
+      if (audioUrl) break
     }
-    const transcodeData = await transcodeRes.json() as Record<string, unknown>
-    const audioUrl = transcodeData.url as string | undefined
     if (!audioUrl) {
       console.warn("[fallback] sc no audio url in transcode")
-      if (diag) { diag.step = "transcode_no_url" }
+      if (diag && !diag.step) { diag.step = "transcode_no_url" }
       return null
     }
     console.warn(`[fallback] sc audio: ${audioUrl.slice(0, 80)}`)
