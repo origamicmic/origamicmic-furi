@@ -106,7 +106,11 @@ function pumpStream(body: ReadableStream<Uint8Array> | null): ReadableStream<Uin
   })
 }
 
-async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): Promise<string | null> {
+async function resolveAudioUrl(
+  query: string,
+  expectTitle: string | null,
+  diag?: Record<string, unknown>
+): Promise<string | null> {
   await ensureClientId()
   const signal = AbortSignal.timeout(SEARCH_TIMEOUT)
   try {
@@ -129,7 +133,24 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
       return null
     }
 
-    // Try each search result until one yields a playable progressive audio URL
+    // Sort results by title similarity to the expected title
+    if (expectTitle) {
+      const et = expectTitle.toLowerCase()
+      const scoreTitle = (t: string) => {
+        const tl = t.toLowerCase()
+        if (tl === et) return 100
+        if (tl.startsWith(et)) return 90
+        if (tl.includes(et)) return 70
+        // Check word-level matching (title might contain " - " or " / ")
+        const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
+        const matchCount = words.filter((w) => w.length >= 2 && tl.includes(w)).length
+        return matchCount * 20
+      }
+      ;(collection as Record<string, unknown>[]).sort((a, b) => {
+        return scoreTitle(String(b.title || "")) - scoreTitle(String(a.title || ""))
+      })
+      if (diag) { diag.sortedByTitle = expectTitle }
+    }
     for (let ti = 0; ti < collection.length; ti++) {
       const track = collection[ti]
       console.warn(`[fallback] sc track ${ti + 1}: ${String(track.title || "").slice(0, 50)}`)
@@ -271,6 +292,7 @@ async function streamAudio(
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const q = searchParams.get("q")
+  const title = searchParams.get("title")
   const debug = searchParams.get("debug")
   if (!q || q.trim().length === 0) {
     return new Response(null, { status: 400 })
@@ -288,7 +310,7 @@ export async function GET(request: NextRequest) {
       return Response.json(diag, { status: 404 })
     }
 
-    const audioUrl = await resolveAudioUrl(q.trim(), diag)
+    const audioUrl = await resolveAudioUrl(q.trim(), title?.trim() || null, diag)
     diag.audioUrlResolved = !!audioUrl
     if (!audioUrl) {
       diag.error = "no_audio_url"

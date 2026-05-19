@@ -206,7 +206,8 @@ export default function Home() {
           } catch {}
         }
         const q = encodeURIComponent(`${song.title} ${song.artist}`)
-        const soundcloudUrl = `/api/audio/youtube?q=${q}`
+        const t = encodeURIComponent(song.title)
+        const soundcloudUrl = `/api/audio/youtube?q=${q}&title=${t}`
         setAudioTitle(song.title)
         setAudioArtist(song.artist)
 
@@ -309,11 +310,6 @@ export default function Home() {
             "flex w-full flex-1 flex-col gap-3 overflow-hidden p-4 sm:p-6",
             editingEnabled && !isNarrow ? "" : "mx-auto max-w-6xl"
           )}>
-            {isNarrow && audioUrl && (
-              <div className="flex justify-center">
-                <Player key={audioUrl} src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
-              </div>
-            )}
             {kuroshiroError && (
               <div className="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 解析引擎加载失败，请重试
