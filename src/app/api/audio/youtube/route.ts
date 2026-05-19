@@ -138,22 +138,20 @@ async function resolveAudioUrl(
     if (expectTitle) {
       const et = expectTitle.toLowerCase().trim()
       const ea = (expectArtist || "").toLowerCase().trim()
-      const cleanTitle = (t: string) => t.toLowerCase().trim().replace(/\s*[-~|/]\s*.*$/, "").trim()
+      const cleanTitle = (t: string) => t.toLowerCase().trim().replace(/\s*[-~–—]\s*.*$/, "").trim()
       const scoreTitle = (t: string, u: string) => {
         const tl = t.toLowerCase().trim()
         const ul = u.toLowerCase()
         let score = 0
         // Title matching
-        const ct = cleanTitle(tl)
-        if (ct === et || tl === et) { score += 50 }
-        else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " /")) { score += 45 }
+        if (tl === et) { score += 50 }
+        else if (tl.startsWith(et + " ") || tl.startsWith(et + " -") || tl.startsWith(et + " –") || tl.startsWith(et + " ~")) { score += 45 }
         else if (tl.startsWith(et + " (")) { score += 40 }
-        else if (tl.startsWith(et)) { score += 30 }
-        else if (tl.includes(et)) { score += 20 }
-        else {
-          const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
-          score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 10, 20)
-        }
+        else if (tl.startsWith(et + " /") || tl.startsWith(et + " |")) { score += 25 } // penalty for mixed titles
+        else if (cleanTitle(tl) === et) { score += 24 }
+        else if (tl.includes(et)) { score += 15 }
+        const words = et.replace(/[\(\[\{].*?[\)\]\}]/g, "").trim().split(/\s+/)
+        score += Math.min(words.filter((w) => w.length >= 2 && tl.includes(w)).length * 5, 15)
         // Artist matching bonus
         if (ea) {
           if (ul.includes(ea)) score += 30
