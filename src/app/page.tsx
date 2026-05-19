@@ -209,16 +209,17 @@ export default function Home() {
         const t = encodeURIComponent(song.title)
         const a = encodeURIComponent(song.artist)
         const dur = song.duration ? `&dur=${song.duration}` : ""
+        const qqMusicUrl = `/api/audio/qq?q=${q}&title=${t}&artist=${a}${dur}`
         const soundcloudUrl = `/api/audio/youtube?q=${q}&title=${t}&artist=${a}${dur}`
         setAudioTitle(song.title)
         setAudioArtist(song.artist)
 
         if (neteaseId) {
           setAudioUrl(`/api/audio?id=${neteaseId}`)
-          setAudioFallbackUrl(soundcloudUrl)
+          setAudioFallbackUrl(qqMusicUrl)
         } else {
-          setAudioUrl(soundcloudUrl)
-          setAudioFallbackUrl(null)
+          setAudioUrl(qqMusicUrl)
+          setAudioFallbackUrl(soundcloudUrl)
         }
       } catch { /* no audio */ }
     },
