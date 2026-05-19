@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react"
 import { initKuroshiro, resetEngine, isEngineAlive, tokenizeLyrics } from "@/lib/furigana"
-import type { LyricLine, ConvertMode, CorrectionEntry } from "@/types"
+import type { LyricLine, ConvertMode } from "@/types"
 
 let engineReady = false
 
@@ -91,8 +91,7 @@ export function useConvert(ensureReady?: () => Promise<boolean>) {
   const convert = useCallback(
     async (
       lyrics: string,
-      mode: ConvertMode,
-      corrections?: CorrectionEntry[]
+      mode: ConvertMode
     ) => {
       const gen = generationRef.current
       setIsConverting(true)
@@ -101,7 +100,7 @@ export function useConvert(ensureReady?: () => Promise<boolean>) {
           const ok = await ensureReady()
           if (!ok || generationRef.current !== gen) return
         }
-        const result = await tokenizeLyrics(lyrics, mode, corrections)
+        const result = await tokenizeLyrics(lyrics, mode)
         if (generationRef.current !== gen) return
         setLines(result)
         return result

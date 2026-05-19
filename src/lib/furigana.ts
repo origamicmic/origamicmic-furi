@@ -2,7 +2,7 @@
 
 import Kuroshiro from "kuroshiro"
 import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji"
-import type { LyricToken, LyricLine, ConvertMode, CorrectionEntry } from "@/types"
+import type { LyricToken, LyricLine, ConvertMode } from "@/types"
 import ON_READINGS from "./on-readings"
 
 let kuroshiroInstance: Kuroshiro | null = null
@@ -324,8 +324,7 @@ async function convertTokenReading(
 export async function convertLine(
   text: string,
   mode: ConvertMode,
-  lineIndex: number,
-  corrections?: CorrectionEntry[]
+  lineIndex: number
 ): Promise<LyricToken[]> {
   if (!kuroshiroInstance) {
     throw new Error("Kuroshiro not initialized")
@@ -396,20 +395,6 @@ export async function convertLine(
     }
   }
 
-  if (corrections && corrections.length > 0) {
-    for (const token of tokens) {
-      if (token.isKanji) {
-        const correction = corrections.find(
-          (c) => c.word === token.surface && c.default_reading === token.reading
-        )
-        if (correction) {
-          token.userReading = correction.user_reading
-          token.userModified = true
-        }
-      }
-    }
-  }
-
   return tokens
 }
 
@@ -422,15 +407,14 @@ export function splitLyricsToLines(lyrics: string): string[] {
 
 export async function tokenizeLyrics(
   lyrics: string,
-  mode: ConvertMode,
-  corrections?: CorrectionEntry[]
+  mode: ConvertMode
 ): Promise<LyricLine[]> {
   const normalized = normalizeLyricsText(lyrics)
   const lines = splitLyricsToLines(normalized)
   const results = await Promise.allSettled(
     lines.map(async (line, index) => {
       try {
-        const tokens = await convertLine(line, mode, index, corrections)
+        const tokens = await convertLine(line, mode, index)
         return { index, original: line, tokens }
       } catch {
         return { index, original: line, tokens: [] }

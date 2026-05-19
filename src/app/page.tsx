@@ -12,7 +12,7 @@ import { EditPanel } from "@/components/editor/edit-panel"
 import { ExportButton } from "@/components/export/export-button"
 import { useKuroshiro, useConvert, forceKuroshiroReset } from "@/hooks/use-kuroshiro"
 import { useSearch } from "@/hooks/use-search"
-import { useCorrections } from "@/hooks/use-corrections"
+import { useRecommendations } from "@/hooks/use-recommendations"
 import type { InputMode, ConvertMode } from "@/types"
 import { ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -49,7 +49,7 @@ export default function Home() {
   const { error: kuroshiroError, initializing, ensureReady, retry } = useKuroshiro()
   const { lines, setLines, isConverting, convert, updateToken, resetGeneration } = useConvert(ensureReady)
   const search = useSearch()
-  const { corrections, loadCorrections, submitCorrection } = useCorrections()
+  const { submitRecommendation } = useRecommendations()
   const [showBackTop, setShowBackTop] = useState(false)
   const [isNarrow, setIsNarrow] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
@@ -60,7 +60,6 @@ export default function Home() {
   const [editingEnabled, setEditingEnabled] = useState(false)
   const [selectedEditWord, setSelectedEditWord] = useState<{ surface: string; reading: string; lineIndex: number; tokenId: string } | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
-  const [audioFallbackUrl, setAudioFallbackUrl] = useState<string | null>(null)
   const [audioTitle, setAudioTitle] = useState("")
   const [audioArtist, setAudioArtist] = useState("")
   const [searchFocused, setSearchFocused] = useState(false)
@@ -100,7 +99,6 @@ export default function Home() {
         if (Date.now() - hiddenTime > 30000) {
           forceKuroshiroReset()
           retry()
-          loadCorrections()
         }
         hiddenTime = 0
       }
@@ -112,7 +110,7 @@ export default function Home() {
       window.removeEventListener("pageshow", onPageShow)
       document.removeEventListener("visibilitychange", onVisibilityChange)
     }
-  }, [retry, loadCorrections])
+  }, [retry])
 
   const data = useMemo(
     () => ({
@@ -123,8 +121,6 @@ export default function Home() {
     }),
     [search.lyricData, lines]
   )
-
-  useEffect(() => { loadCorrections() }, [loadCorrections])
 
   useEffect(() => {
     const current = search.searchDoneRef.current
@@ -137,13 +133,13 @@ export default function Home() {
     if (lastLyricsRef.current === text && lastModeRef.current === convertMode) return
     lastLyricsRef.current = text
     lastModeRef.current = convertMode
-    convert(text, convertMode, corrections)
-  }, [search.lyricsText, convertMode, corrections, convert])
+    convert(text, convertMode)
+  }, [search.lyricsText, convertMode, convert])
 
   const handleSubmitCorrection = useCallback(
-    async (c: { word: string; default_reading: string; user_reading: string; song_title?: string; artist?: string }) =>
-      submitCorrection(c),
-    [submitCorrection]
+    async (c: { word: string; default_reading: string; user_reading: string }) =>
+      submitRecommendation(c.word, c.user_reading, c.default_reading),
+    [submitRecommendation]
   )
 
   const handleReset = () => {
@@ -157,15 +153,13 @@ export default function Home() {
     setEditingEnabled(false)
     setSelectedEditWord(null)
     setAudioUrl(null)
-    setAudioFallbackUrl(null)
     setAudioTitle("")
     setAudioArtist("")
   }
 
   const handleSelectSong = useCallback(
-    async (song: { id: string; title: string; artist: string; source: string }) => {
+    async (song: { id: string; title: string; artist: string; source: string; duration?: number }) => {
       setAudioUrl(null)
-      setAudioFallbackUrl(null)
       setAudioTitle("")
       setAudioArtist("")
       const key = `${song.source}-${song.id}`
@@ -205,21 +199,11 @@ export default function Home() {
             }
           } catch {}
         }
-        const q = encodeURIComponent(`${song.title} ${song.artist}`)
-        const t = encodeURIComponent(song.title)
-        const a = encodeURIComponent(song.artist)
-        const dur = song.duration ? `&dur=${song.duration}` : ""
-        const qqMusicUrl = `/api/audio/qq?q=${q}&title=${t}&artist=${a}${dur}`
-        const soundcloudUrl = `/api/audio/youtube?q=${q}&title=${t}&artist=${a}${dur}`
         setAudioTitle(song.title)
         setAudioArtist(song.artist)
 
         if (neteaseId) {
           setAudioUrl(`/api/audio?id=${neteaseId}`)
-          setAudioFallbackUrl(qqMusicUrl)
-        } else {
-          setAudioUrl(qqMusicUrl)
-          setAudioFallbackUrl(soundcloudUrl)
         }
       } catch { /* no audio */ }
     },
@@ -245,7 +229,7 @@ export default function Home() {
             ? "flex justify-center"
             : "fixed top-2 left-1/2 -translate-x-1/2"
         )}>
-          <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} fallbackSrc={audioFallbackUrl || undefined} />
+          <Player src={audioUrl} title={audioTitle} artist={audioArtist || ""} />
         </div>
       )}
 
@@ -273,7 +257,7 @@ export default function Home() {
             {kuroshiroError && (
               <div className="w-full rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 解析引擎加载失败，请重试
-                <button onClick={() => { retry(); convert(search.lyricsText!, convertMode, corrections) }} className="ml-2 underline hover:no-underline">重试</button>
+                <button onClick={() => { retry(); convert(search.lyricsText!, convertMode) }} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
 
@@ -316,7 +300,7 @@ export default function Home() {
             {kuroshiroError && (
               <div className="rounded-xl border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
                 解析引擎加载失败，请重试
-                <button onClick={() => { retry(); convert(search.lyricsText!, convertMode, corrections) }} className="ml-2 underline hover:no-underline">重试</button>
+                <button onClick={() => { retry(); convert(search.lyricsText!, convertMode) }} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
             <div className={`flex items-center justify-between rounded-2xl px-5 py-2 ${FROSTED}`}>

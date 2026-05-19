@@ -1,6 +1,12 @@
 "use client"
 
+import { useEffect } from "react"
+
 export default function Error({ error, reset }: { error: Error; reset: () => void }) {
+  useEffect(() => {
+    console.error("[furi] page error", error.message, error.stack)
+  }, [error])
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-4 text-center">
       <h1 className="text-2xl font-bold text-foreground">出错了</h1>

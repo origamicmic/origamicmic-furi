@@ -7,7 +7,6 @@ interface PlayerProps {
   src: string
   title: string
   artist: string
-  fallbackSrc?: string
 }
 
 function formatTime(seconds: number): string {
@@ -16,7 +15,7 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`
 }
 
-export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
+export function Player({ src, title, artist }: PlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const barRef = useRef<HTMLDivElement>(null)
   const textRef = useRef<HTMLSpanElement>(null)
@@ -30,11 +29,10 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   const dragging = useRef(false)
   const seeking = useRef(false)
   const dragPos = useRef(0)
-  const fallbackTried = useRef(false)
   const stallRetries = useRef(0)
   const playingRef = useRef(false)
   const audioSrcRef = useRef(src)
-  const retryTimer = useRef<ReturnType<typeof setTimeout>>()
+  const retryTimer = useRef<NodeJS.Timeout | undefined>(undefined)
 
   useEffect(() => { playingRef.current = playing }, [playing])
 
@@ -76,19 +74,8 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     if (!audio) return
     console.warn(`[player] error code=${audio.error?.code} networkState=${audio.networkState}`)
     setLoading(false)
-    if (fallbackSrc && !fallbackTried.current) {
-      console.warn("[player] primary failed, switching to fallback")
-      fallbackTried.current = true
-      stallRetries.current = 0
-      setError(false)
-      audioSrcRef.current = fallbackSrc
-      audio.src = fallbackSrc
-      setLoading(true)
-    } else {
-      console.warn("[player] playback failed, no fallback available or already tried")
-      setError(true)
-    }
-  }, [fallbackSrc])
+    setError(true)
+  }, [])
 
   const onStalled = useCallback(() => {
     const audio = audioRef.current
@@ -102,21 +89,9 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       return
     }
 
-    // After 3 stall retries exhausted, try fallback if available
-    if (fallbackSrc && !fallbackTried.current) {
-      console.warn("[player] stalled too many times, switching to fallback")
-      fallbackTried.current = true
-      stallRetries.current = 0
-      setError(false)
-      setLoading(true)
-      audioSrcRef.current = fallbackSrc
-      audio.src = fallbackSrc
-      return
-    }
-
     setLoading(false)
     setError(true)
-  }, [fallbackSrc])
+  }, [])
 
   const onSeeking = useCallback(() => { seeking.current = true }, [])
 
@@ -127,7 +102,6 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
   }, [])
 
   useEffect(() => {
-    fallbackTried.current = false
     stallRetries.current = 0
     audioSrcRef.current = src
     if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = undefined }
@@ -141,18 +115,9 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
     }
     if (audio.error || audio.networkState === 3) {
       setLoading(false)
-      if (fallbackSrc && !fallbackTried.current) {
-        fallbackTried.current = true
-        stallRetries.current = 0
-        setError(false)
-        audioSrcRef.current = fallbackSrc
-        audio.src = fallbackSrc
-        setLoading(true)
-      } else {
-        setError(true)
-      }
+      setError(true)
     }
-  }, [src, fallbackSrc])
+  }, [src])
 
   const toggle = useCallback(() => {
     const audio = audioRef.current
@@ -162,7 +127,6 @@ export function Player({ src, title, artist, fallbackSrc }: PlayerProps) {
       if (retryTimer.current) clearTimeout(retryTimer.current)
       setError(false)
       setLoading(true)
-      fallbackTried.current = false
       stallRetries.current = 0
       audioSrcRef.current = src
       audio.src = src

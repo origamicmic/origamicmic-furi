@@ -4,7 +4,28 @@ import { searchAllSources } from "@/lib/lyrics-sources"
 const cache = new Map<string, { songs: unknown[]; timestamp: number }>()
 const CACHE_TTL = 5 * 60 * 1000
 
+const RATE_LIMIT = 30
+const RATE_WINDOW = 60_000
+const counters = new Map<string, { count: number; resetAt: number }>()
+
+function getIp(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for")
+  return forwarded?.split(",")[0]?.trim() ?? "unknown"
+}
+
 export async function GET(request: NextRequest) {
+  const ip = getIp(request)
+  const now = Date.now()
+  const entry = counters.get(ip)
+  if (entry && now < entry.resetAt && entry.count >= RATE_LIMIT) {
+    return Response.json({ error: "请求过于频繁，请稍后重试", songs: [] }, { status: 429 })
+  }
+  if (!entry || now > entry.resetAt) {
+    counters.set(ip, { count: 1, resetAt: now + RATE_WINDOW })
+  } else {
+    entry.count++
+  }
+
   const { searchParams } = new URL(request.url)
   const query = searchParams.get("q")
 

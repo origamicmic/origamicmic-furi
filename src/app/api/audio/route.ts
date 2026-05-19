@@ -1,7 +1,16 @@
 import { NextRequest } from "next/server"
 import crypto from "crypto"
 
-const EAPI_KEY = process.env.EAPI_KEY || "e82ckenh8dichen8"
+const EAPI_KEY = process.env.EAPI_KEY
+
+function getAllowedOrigin(request: NextRequest): string | null {
+  const origin = request.headers.get("origin") || ""
+  const host = request.headers.get("host") || ""
+  if (origin && (origin.includes(host) || origin.endsWith(".vercel.app"))) {
+    return origin
+  }
+  return null
+}
 
 // Cache resolved audio URLs per song ID (avoids re-resolving on each Range/seek)
 const urlCache = new Map<string, { url: string; time: number }>()
@@ -88,7 +97,8 @@ async function streamFromCDN(
       responseHeaders.set("Content-Type", ct || "application/octet-stream")
       responseHeaders.set("Accept-Ranges", "bytes")
       responseHeaders.set("Cache-Control", "public, max-age=3600")
-      responseHeaders.set("Access-Control-Allow-Origin", "*")
+      const allowedOrigin = getAllowedOrigin(request)
+      if (allowedOrigin) responseHeaders.set("Access-Control-Allow-Origin", allowedOrigin)
 
       if (res.status === 206) {
         const cr = res.headers.get("content-range")

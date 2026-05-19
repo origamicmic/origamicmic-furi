@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next"
 
 export default function robots(): MetadataRoute.Robots {
+  const base = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"
   return {
     rules: [
       {
@@ -12,6 +13,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: "/api/",
       },
     ],
-    sitemap: "https://furi.tomori.fyi/sitemap.xml",
+    sitemap: `${base}/sitemap.xml`,
   }
 }

@@ -1,7 +1,28 @@
 import { NextRequest } from "next/server"
 import { fetchLyricsFromSource } from "@/lib/lyrics-sources"
 
+const RATE_LIMIT = 20
+const RATE_WINDOW = 60_000
+const counters = new Map<string, { count: number; resetAt: number }>()
+
+function getIp(request: NextRequest): string {
+  const forwarded = request.headers.get("x-forwarded-for")
+  return forwarded?.split(",")[0]?.trim() ?? "unknown"
+}
+
 export async function POST(request: NextRequest) {
+  const ip = getIp(request)
+  const now = Date.now()
+  const entry = counters.get(ip)
+  if (entry && now < entry.resetAt && entry.count >= RATE_LIMIT) {
+    return Response.json({ error: "请求过于频繁，请稍后重试" }, { status: 429 })
+  }
+  if (!entry || now > entry.resetAt) {
+    counters.set(ip, { count: 1, resetAt: now + RATE_WINDOW })
+  } else {
+    entry.count++
+  }
+
   try {
     if (!(request.headers.get("content-type") || "").includes("application/json")) {
       return Response.json({ error: "不支持的媒体类型" }, { status: 415 })

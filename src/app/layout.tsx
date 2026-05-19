@@ -15,7 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://furi.tomori.fyi/"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: [{ url: "/favicon.ico" }, { url: "/icon.svg", type: "image/svg+xml" }],
   },
@@ -60,6 +63,24 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebApplication",
+              name: "Origamicmic Furi",
+              url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+              description:
+                "日语歌词自动注音工具——搜索或粘贴日语歌词，自动转换为平假名或罗马音。支持在线编辑汉字读音、高亮对照、导出 TXT/LRC。",
+              applicationCategory: "EducationalApplication",
+              operatingSystem: "All",
+              offers: { "@type": "Offer", price: "0" },
+              inLanguage: ["ja", "zh"],
+              browserRequirements: "Requires JavaScript",
+            }),
+          }}
+        />
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
         </ThemeProvider>

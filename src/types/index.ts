@@ -38,18 +38,6 @@ export interface SearchResult {
   source: string
 }
 
-export interface CorrectionEntry {
-  id?: string
-  word: string
-  default_reading: string
-  user_reading: string
-  song_id?: string
-  song_title?: string
-  artist?: string
-  created_at?: string
-  votes?: number
-}
-
 export type ConvertMode = "hiragana" | "romaji"
 
 export type InputMode = "search" | "paste"

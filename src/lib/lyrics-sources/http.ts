@@ -57,10 +57,10 @@ function doRequest(
             return
           }
         }
-        const chunks: Buffer[] = []
+        const chunks: any[] = []
         res.on("data", (chunk: Buffer) => chunks.push(chunk))
         res.on("end", () => {
-          let body = Buffer.concat(chunks)
+          let body: Buffer = Buffer.concat(chunks)
           const enc = res.headers["content-encoding"]
           if (enc && body.length > 0) {
             try { body = decompress(body, enc) } catch { /* keep raw on decompress failure */ }

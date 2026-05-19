@@ -44,17 +44,17 @@ npm run dev
 复制 `.env.example` 为 `.env.local`，按需填写：
 
 ```bash
-# 可选：Genius API token，用于扩展歌词搜索与降级
-# 在 https://genius.com/api-clients 申请
+# 生产环境站点域名，用于 SEO metadata
+NEXT_PUBLIC_SITE_URL=https://your-domain.com
+
+# Genius API Token — 扩展歌词搜索覆盖范围
+# 申请地址: https://genius.com/api-clients
 GENIUS_ACCESS_TOKEN=你的token
 
-# 可选：Supabase 数据库，用于社区推荐与投票功能
+# Supabase 数据库 — 社区读音推荐与投票
+# 申请地址: https://supabase.com
 NEXT_PUBLIC_SUPABASE_URL=你的supabase地址
 NEXT_PUBLIC_SUPABASE_ANON_KEY=你的supabase密钥
-
-# 以下为可选，代码内已有默认值：
-# EAPI_KEY           — 网易云 EAPI 加密密钥
-# YOUTUBE_API_KEY    — YouTube InnerTube API 密钥
 ```
 
 所有外部服务均为可选，不配置也能正常运行。
@@ -79,9 +79,7 @@ src/
 │       ├── search/      # 多源歌曲搜索
 │       ├── lyrics/      # 歌词获取（降级链）
 │       ├── audio/       # 网易云 EAPI 音频代理
-│       │   └── youtube/ # YouTube 音频降级代理
-│       ├── corrections/ # 用户修正管理
-│       ├── recommendations/ # 社区推荐
+│       ├── recommendations/ # 社区读音推荐
 │       └── vote/        # 投票接口
 ├── components/
 │   ├── editor/     # 编辑面板、单词编辑器、修正对话框
