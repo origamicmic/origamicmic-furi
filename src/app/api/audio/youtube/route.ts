@@ -134,7 +134,11 @@ async function resolveAudioUrl(query: string, diag?: Record<string, unknown>): P
 
     const media = track.media as Record<string, unknown> | undefined
     const transcodings = media?.transcodings as Record<string, unknown>[] | undefined
-    const transcodeUrl = String(prog.url || "")
+    if (!transcodings || transcodings.length === 0) {
+      console.warn("[fallback] sc no transcodings")
+      if (diag) { diag.step = "no_transcodings" }
+      return null
+    }
 
     // Only use progressive (non-DRM, non-HLS) transcodings
     const progressiveTc = transcodings.filter(
