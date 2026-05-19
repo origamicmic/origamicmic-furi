@@ -192,6 +192,63 @@ async function streamFromLegacy(
   return null
 }
 
+async function streamFromProxy(
+  id: string,
+  request: NextRequest
+): Promise<Response | null> {
+  const PROXY_APIS = [
+    `https://api.baka.plus/meting/?type=url&id=${id}&br=320`,
+    `https://music-api.gdstudio.xyz/api.php?types=url&source=netease&id=${id}&br=320`,
+    `https://api.qijieya.cn/meting/?type=url&id=${id}`,
+  ]
+
+  for (const apiUrl of PROXY_APIS) {
+    try {
+      const res = await fetch(apiUrl, {
+        headers: { "User-Agent": UPSTREAM_HEADERS["User-Agent"] },
+        redirect: "manual",
+        signal: AbortSignal.timeout(8000),
+      })
+
+      // Handle redirect (baka returns 302 with Location header)
+      if (res.status >= 300 && res.status < 400) {
+        const location = res.headers.get("location")
+        if (location) {
+          const audioUrl = location.startsWith("http") ? location : `https://${location}`
+          console.warn(`[audio] proxy redirect to: ${audioUrl.slice(0, 80)}`)
+          const result = await streamFromCDN(audioUrl, request)
+          if (result) return result
+        }
+        continue
+      }
+
+      // Handle raw text URL
+      const text = await res.text()
+      if (text.startsWith("http") && text.length < 500) {
+        const audioUrl = text.trim()
+        console.warn(`[audio] proxy text URL: ${audioUrl.slice(0, 80)}`)
+        const result = await streamFromCDN(audioUrl, request)
+        if (result) return result
+        continue
+      }
+
+      // Handle JSON response
+      try {
+        const json = JSON.parse(text)
+        const audioUrl = json.url as string | undefined
+        if (audioUrl) {
+          console.warn(`[audio] proxy JSON URL: ${audioUrl.slice(0, 80)}`)
+          const result = await streamFromCDN(audioUrl, request)
+          if (result) return result
+        }
+      } catch {}
+    } catch (err) {
+      console.warn(`[audio] proxy API error: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  return null
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const id = searchParams.get("id")
@@ -203,9 +260,13 @@ export async function GET(request: NextRequest) {
   const eapiResult = await streamFromEAPI(id, request)
   if (eapiResult) return eapiResult
 
-  // Priority 2: Legacy URL (even when EAPI returns freeTrialInfo, legacy may serve full audio)
+  // Priority 2: Legacy URL
   const legacyResult = await streamFromLegacy(id, request)
   if (legacyResult) return legacyResult
+
+  // Priority 3: Community proxy APIs (unlock VIP songs)
+  const proxyResult = await streamFromProxy(id, request)
+  if (proxyResult) return proxyResult
 
   return new Response(null, { status: 404 })
 }
