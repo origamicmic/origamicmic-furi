@@ -250,7 +250,7 @@ export default function Home() {
         {!hasLyrics ? (
           <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-8 px-4 pt-20">
             <div className="text-center">
-              <h1 className="text-4xl font-bold tracking-[0.08em] text-[oklch(0.45_0.06_40)] dark:text-[oklch(0.7_0.06_40)]"
+              <h1 className="text-[clamp(1.5rem,7vw,2.5rem)] font-bold leading-none tracking-[0.04em] text-[oklch(0.45_0.06_40)] dark:text-[oklch(0.7_0.06_40)]"
                 style={{ textShadow: "3px 3px 0 oklch(0.85_0.02_60 / 0.5)" }}>
                   <FloatingTitle as="span" className="inline">Origamicmic Furi</FloatingTitle>
               </h1>

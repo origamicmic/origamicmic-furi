@@ -27,13 +27,13 @@ export function AsciiLoader({ className }: { className?: string }) {
   }, [])
 
   return (
-    <div className="flex w-full items-start justify-center overflow-visible" style={{ contain: "none" }}>
+    <div className="flex w-full items-start justify-center overflow-hidden">
       <pre
         ref={ref}
         aria-label="搜索中..."
         className={cn(
           "inline-block select-none font-bold text-foreground dark:text-foreground",
-          "text-[6.5px] leading-[6.5px] sm:text-[7.5px] sm:leading-[7.5px]",
+          "text-[clamp(4px,1vw,7px)] leading-[clamp(4px,1vw,7px)]",
           "tracking-[0.5px] whitespace-pre",
           className
         )}

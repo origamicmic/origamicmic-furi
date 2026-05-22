@@ -97,12 +97,12 @@ export function SearchBar({
       {show && (
         <div className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-border/80 bg-card shadow-xl" style={{ maxHeight: `${dropdownMaxH}px` }} data-no-hover-self>
           {isSearching && (
-            <div className="flex h-full flex-col">
+            <div className="flex flex-col max-h-full">
               <div className="flex shrink-0 items-center justify-center py-1.5 text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                 搜索中...
               </div>
-              <div className="flex flex-1 items-center justify-center overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-hidden flex items-center justify-center">
                 <AsciiLoader />
               </div>
             </div>
