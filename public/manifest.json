@@ -1,0 +1,15 @@
+{
+  "name": "Origamicmic Furi - 日语歌词注音",
+  "short_name": "Furi",
+  "description": "日语歌词自动注音工具——搜索或粘贴日语歌词，自动标注平假名与罗马音",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f0e8",
+  "theme_color": "#c47f3a",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "/favicon.ico", "sizes": "48x48" }
+  ],
+  "lang": "zh-CN",
+  "categories": ["education", "utilities"]
+}
