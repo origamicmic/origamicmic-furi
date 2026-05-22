@@ -21,7 +21,7 @@ function eapiEncrypt(path: string, body: Record<string, unknown>): string {
   const message = `nobody${path}use${text}md5forencrypt`
   const digest = crypto.createHash("md5").update(message, "utf8").digest("hex")
   const data = `${path}-36cd479b6b5-${text}-36cd479b6b5-${digest}`
-  const cipher = crypto.createCipheriv("aes-128-ecb", EAPI_KEY, "")
+  const cipher = crypto.createCipheriv("aes-128-ecb" as any, EAPI_KEY, "")
   cipher.setAutoPadding(true)
   let encrypted = cipher.update(data, "utf8", "hex")
   encrypted += cipher.final("hex")

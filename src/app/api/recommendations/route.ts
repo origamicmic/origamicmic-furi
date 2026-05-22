@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         votes_down: 0,
         is_official: false,
         ip_hash: ipHash,
-      })
+      } as any)
       .select()
 
     if (error) {

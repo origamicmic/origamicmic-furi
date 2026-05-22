@@ -75,9 +75,11 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "推荐不存在" }, { status: 404 })
     }
 
+    const record = current as any
+
     const { error: updateErr } = await supabase
       .from("recommendations")
-      .update({ [column]: (current[column] || 0) + 1 })
+      .update({ [column]: ((record[column] as number) || 0) + 1 } as any)
       .eq("id", recommendation_id)
 
     if (updateErr) {
@@ -93,8 +95,8 @@ export async function POST(request: NextRequest) {
     return Response.json({
       success: true,
       votes: {
-        votes_up: (current.votes_up || 0) + (voteType === "up" ? 1 : 0),
-        votes_down: (current.votes_down || 0) + (voteType === "down" ? 1 : 0),
+        votes_up: ((record.votes_up as number) || 0) + (voteType === "up" ? 1 : 0),
+        votes_down: ((record.votes_down as number) || 0) + (voteType === "down" ? 1 : 0),
       },
     })
   } catch {
