@@ -183,7 +183,7 @@ export function Player({ src, title, artist }: PlayerProps) {
   const progress = duration > 0 ? (current / duration) * 100 : 0
 
   return (
-    <div className="flex flex-1 items-center gap-3 rounded-full bg-white/60 px-4 py-1.5 shadow-sm ring-1 ring-white/40 backdrop-blur-xl dark:bg-zinc-900/60 dark:ring-white/10 min-w-[280px] max-w-md">
+    <div className="flex flex-1 items-center gap-3 rounded-full border border-border/30 bg-white px-4 py-1.5 shadow-sm dark:bg-zinc-900 min-w-[280px] max-w-md">
       <audio
         ref={audioRef}
         src={src}
@@ -202,6 +202,7 @@ export function Player({ src, title, artist }: PlayerProps) {
       <button
         onClick={toggle}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow transition-transform hover:scale-105"
+        data-no-hover-self
       >
         {loading ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -233,6 +234,7 @@ export function Player({ src, title, artist }: PlayerProps) {
             ref={barRef}
             className="relative h-2 flex-1 cursor-pointer rounded-full bg-border/60"
             onPointerDown={onPointerDown}
+            data-no-hover-self
           >
             <div
               className="absolute inset-y-0 left-0 z-0 rounded-full bg-primary transition-all duration-200"
@@ -240,7 +242,7 @@ export function Player({ src, title, artist }: PlayerProps) {
             />
             <div
               className="absolute top-1/2 z-10 -translate-y-1/2 h-[10px] w-[10px] rounded-full bg-primary shadow"
-              style={{ left: `calc(${progress}% - 5px)` }}
+              style={{ left: `clamp(0px, calc(${progress}% - 5px), calc(100% - 10px))` }}
             />
           </div>
           <span className="text-[10px] tabular-nums text-muted-foreground/40 shrink-0">

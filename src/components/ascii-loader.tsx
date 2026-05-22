@@ -38,7 +38,7 @@ export function AsciiLoader({ className }: { className?: string }) {
           className
         )}
         style={{
-          transform: "scaleX(1.6)",
+          transform: "scaleX(1.14)",
           transformOrigin: "center top",
         }}
       />

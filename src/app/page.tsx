@@ -16,8 +16,9 @@ import { useRecommendations } from "@/hooks/use-recommendations"
 import type { InputMode, ConvertMode } from "@/types"
 import { ArrowUp } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-const FROSTED = "bg-white/40 shadow-lg shadow-black/5 backdrop-blur-2xl ring-1 ring-white/50 dark:bg-zinc-900/40 dark:ring-white/10"
+import { PageSwitcher } from "@/components/landing/page-switcher"
+import { IntroPage } from "@/components/landing/intro-page"
+import { FloatingTitle } from "@/components/ui/floating-title"
 
 const BTN_BASE = "rounded-lg px-3 py-1.5 text-xs font-medium tracking-wider transition-all"
 const BTN_ON = "bg-primary text-primary-foreground shadow-sm hover:bg-primary/80"
@@ -218,7 +219,9 @@ export default function Home() {
   const hasLyrics = search.lyricsText !== null
 
   return (
-      <div className="flex min-h-full flex-col bg-background">
+    <PageSwitcher
+      searchPage={
+        <div className="flex min-h-screen flex-col bg-background" data-has-lyrics={hasLyrics ? "true" : "false"}>
       <Header onHomeClick={handleReset} />
 
       {/* Single Player instance - CSS-only layout switch on resize */}
@@ -248,10 +251,15 @@ export default function Home() {
           <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col items-center gap-8 px-4 pt-20">
             <div className="text-center">
               <h1 className="text-4xl font-bold tracking-[0.08em] text-[oklch(0.45_0.06_40)] dark:text-[oklch(0.7_0.06_40)]"
-                style={{ textShadow: "2px 2px 0 oklch(0.85_0.02_60 / 0.4)" }}>
-                  Origamicmic Furi
+                style={{ textShadow: "3px 3px 0 oklch(0.85_0.02_60 / 0.5)" }}>
+                  <FloatingTitle as="span" className="inline">Origamicmic Furi</FloatingTitle>
               </h1>
-              <p className="mt-3 text-sm tracking-[0.06em] text-muted-foreground/60">日语歌词注音 · 罗马音转换</p>
+              <FloatingTitle
+                as="p"
+                className="mt-3 text-sm tracking-[0.06em] text-muted-foreground/50"
+              >
+                日语歌词注音 · 罗马音转换
+              </FloatingTitle>
             </div>
 
             {kuroshiroError && (
@@ -294,7 +302,7 @@ export default function Home() {
           </div>
         ) : (
           <div className={cn(
-            "flex w-full flex-1 flex-col gap-3 overflow-hidden p-4 sm:p-6",
+            "flex w-full flex-col gap-3 p-4 sm:p-6",
             editingEnabled && !isNarrow ? "" : "mx-auto max-w-6xl"
           )}>
             {kuroshiroError && (
@@ -303,9 +311,9 @@ export default function Home() {
                 <button onClick={() => { retry(); convert(search.lyricsText!, convertMode) }} className="ml-2 underline hover:no-underline">重试</button>
               </div>
             )}
-            <div className={`flex items-center justify-between rounded-2xl px-5 py-2 ${FROSTED}`}>
-              <span className="text-xs text-muted-foreground/50">{lines.length}行 · {data.source}</span>
-              <div className="flex items-center gap-2">
+            <div className="flex w-full items-center overflow-hidden rounded-2xl border border-border/30 bg-white px-5 py-2 dark:bg-zinc-900" data-hover-lift>
+              <span className="min-w-0 truncate text-xs text-muted-foreground/50">{lines.length}行 · {data.source}</span>
+              <div className="ml-auto flex items-center gap-2">
                 <button onClick={() => setHighlightEnabled((p) => !p)}
                   className={cn(BTN_BASE, highlightEnabled ? BTN_ON : BTN_OFF)}>高亮</button>
                 <button onClick={() => setEditingEnabled((p) => !p)}
@@ -315,13 +323,13 @@ export default function Home() {
             </div>
 
             <div className={cn(
-              "flex flex-1 gap-4 overflow-hidden",
-              isMobile ? "flex-col" : "flex-row"
+              "flex",
+              isMobile ? "flex-col gap-4" : "flex-row"
             )}>
-              <div className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${FROSTED}`}>
+              <div className={cn("flex min-w-0 flex-1 flex-col rounded-2xl border border-border/30 bg-white dark:bg-zinc-900", !isMobile && "mr-4")} data-no-hover>
                 <LyricsPanel lines={lines} rawText={search.lyricsText} isConverting={isConverting} title={data.title} artist={data.artist} highlightEnabled={highlightEnabled} />
               </div>
-              <div className={`flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl ${FROSTED}`}>
+              <div className="flex min-w-0 flex-1 flex-col rounded-2xl border border-border/30 bg-white dark:bg-zinc-900" data-no-hover>
                 <EditorPanel lines={lines} mode={convertMode} onModeChange={setConvertMode}
                   onTokenEdit={(i, tid, r) => updateToken(i, tid, r)}
                   isConverting={isConverting} onSubmitCorrection={handleSubmitCorrection}
@@ -332,10 +340,9 @@ export default function Home() {
 
               {!isNarrow && (
                 <div className={cn(
-                  "flex flex-col overflow-hidden rounded-2xl transition-all duration-300",
-                  editingEnabled ? "flex-1 min-w-0 opacity-100" : "w-0 opacity-0",
-                  FROSTED
-                )}>
+                  "flex flex-col rounded-2xl border border-border/30 bg-white dark:bg-zinc-900 transition-all duration-300",
+                  editingEnabled ? "flex-1 min-w-0 opacity-100 ml-4" : "w-0 opacity-0 overflow-hidden"
+                )} data-no-hover-self>
                   {editingEnabled && (
                     <EditPanel
                       key={selectedEditWord ? `${selectedEditWord.tokenId}-${selectedEditWord.lineIndex}` : "empty"}
@@ -366,5 +373,10 @@ export default function Home() {
         )}
       </main>
     </div>
+      }
+      introPage={(switchToSearch, animState) => (
+        <IntroPage onBackToSearch={switchToSearch} animState={animState} />
+      )}
+    />
   )
 }

@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { WordEditor } from "@/components/editor/word-editor"
 import { CorrectionDialog } from "@/components/editor/correction-dialog"
 import type { LyricLine, ConvertMode, LyricToken } from "@/types"
@@ -71,7 +70,7 @@ export function EditorPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-white/20 px-5 py-3.5 dark:border-white/10">
+      <div className="flex items-center justify-between border-b border-white/20 px-5 py-3.5 dark:border-white/10" data-hover-lift>
         <div>
           <h2 className="text-sm font-medium text-muted-foreground">注音歌词</h2>
           {(songTitle || artist) && (
@@ -80,7 +79,7 @@ export function EditorPanel({
             </p>
           )}
         </div>
-        <div className="flex overflow-hidden rounded-xl border border-border/60">
+        <div className="flex overflow-hidden rounded-xl border border-border/60" data-hover-lift>
           <button
             onClick={() => onModeChange("hiragana")}
             className={cn(
@@ -105,49 +104,47 @@ export function EditorPanel({
           </button>
         </div>
       </div>
-      <ScrollArea className="flex-1">
-        <div className="space-y-0.5 p-5 font-medium leading-relaxed text-[15px]">
-          {lines.map((line) => (
-            <div key={line.index} className="flex items-start gap-3 min-h-[1.5rem]">
-              <span className="mt-0.5 min-w-[2rem] shrink-0 text-right text-xs text-muted-foreground/40">
-                {line.index + 1}
-              </span>
-              <span>
-                {line.tokens.map((token, i, arr) => (
-                  <span key={`${token.tokenId}-${token.reading}-${token.userReading ?? ""}`}>
-                    {editingEnabled ? (
-                      <WordEditor
-                        token={token}
-                        onEdit={(newReading) =>
-                          onTokenEdit(line.index, token.tokenId, newReading)
-                        }
-                        onSubmitCorrection={() => submitCorrection(token, line.index)}
-                        highlightEnabled={highlightEnabled}
-                        onWordSelect={onWordSelect ? () => onWordSelect({ surface: token.surface, reading: token.userReading || token.reading, lineIndex: line.index, tokenId: token.tokenId }) : undefined}
-                      />
-                    ) : (
-                      <span
-                        className={cn(
-                          "rounded px-0.5",
-                          highlightEnabled && token.isKanji && "bg-orange-200/60 text-orange-900 dark:bg-orange-500/20 dark:text-orange-200"
-                        )}
-                      >
-                        {token.userReading || token.reading}
-                      </span>
-                    )}
-                    {i < arr.length - 1 ? " " : null}
-                  </span>
-                ))}
-              </span>
-            </div>
-          ))}
-          {lines.length === 0 && (
-            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
-              {isConverting ? "解析引擎处理中..." : "请先选择歌曲"}
-            </div>
-          )}
-        </div>
-      </ScrollArea>
+      <div className="space-y-0.5 p-5 font-medium leading-relaxed text-[15px]">
+        {lines.map((line) => (
+          <div key={line.index} className="flex items-start gap-3 min-h-[1.5rem]">
+            <span className="mt-0.5 min-w-[2rem] shrink-0 text-right text-xs text-muted-foreground/40">
+              {line.index + 1}
+            </span>
+            <span>
+              {line.tokens.map((token, i, arr) => (
+                <span key={`${token.tokenId}-${token.reading}-${token.userReading ?? ""}`}>
+                  {editingEnabled ? (
+                    <WordEditor
+                      token={token}
+                      onEdit={(newReading) =>
+                        onTokenEdit(line.index, token.tokenId, newReading)
+                      }
+                      onSubmitCorrection={() => submitCorrection(token, line.index)}
+                      highlightEnabled={highlightEnabled}
+                      onWordSelect={onWordSelect ? () => onWordSelect({ surface: token.surface, reading: token.userReading || token.reading, lineIndex: line.index, tokenId: token.tokenId }) : undefined}
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "rounded px-0.5",
+                        highlightEnabled && token.isKanji && "bg-orange-200/60 text-orange-900 dark:bg-orange-500/20 dark:text-orange-200"
+                      )}
+                    >
+                      {token.userReading || token.reading}
+                    </span>
+                  )}
+                  {i < arr.length - 1 ? " " : null}
+                </span>
+              ))}
+            </span>
+          </div>
+        ))}
+        {lines.length === 0 && (
+          <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+            {isConverting ? "解析引擎处理中..." : "请先选择歌曲"}
+          </div>
+        )}
+      </div>
 
       <CorrectionDialog
         key={correctionTarget?.token.tokenId ?? "none"}

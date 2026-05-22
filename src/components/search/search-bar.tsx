@@ -4,7 +4,7 @@ import { Search, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { AsciiLoader } from "@/components/ascii-loader"
 import type { SongResult } from "@/types"
-import { useRef, useEffect, useState } from "react"
+import { useRef, useEffect, useLayoutEffect, useState } from "react"
 
 interface SearchBarProps {
   query: string
@@ -33,9 +33,25 @@ export function SearchBar({
   forceOpen,
 }: SearchBarProps) {
   const [open, setOpen] = useState(false)
+  const [dropdownMaxH, setDropdownMaxH] = useState(400)
   const ref = useRef<HTMLDivElement>(null)
   const blurTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Dynamically calculate max dropdown height based on available space below search bar
+  useLayoutEffect(() => {
+    const calc = () => {
+      if (ref.current) {
+        const wrapperRect = ref.current.getBoundingClientRect()
+        const dropdownTop = wrapperRect.bottom + 4 // mt-1
+        const available = window.innerHeight - dropdownTop - 12 // 12px bottom margin
+        setDropdownMaxH(Math.max(180, available))
+      }
+    }
+    calc()
+    window.addEventListener("resize", calc)
+    return () => window.removeEventListener("resize", calc)
+  }, [])
 
   useEffect(() => {
     if (forceOpen && forceOpen > 0) {
@@ -60,8 +76,8 @@ export function SearchBar({
 
   return (
     <div ref={ref} className="relative w-full">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground/60" />
+      <div className="relative" data-hover-lift>
+        <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
           ref={inputRef}
           placeholder="输入歌曲名、歌手名或部分歌词..."
@@ -79,7 +95,7 @@ export function SearchBar({
       </div>
 
       {show && (
-        <div className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-border/80 bg-card shadow-xl" style={{ maxHeight: "calc(100vh - 14rem)" }}>
+        <div className="absolute top-full z-50 mt-1 w-full overflow-hidden rounded-xl border border-border/80 bg-card shadow-xl" style={{ maxHeight: `${dropdownMaxH}px` }} data-no-hover-self>
           {isSearching && (
             <div className="flex h-full flex-col">
               <div className="flex shrink-0 items-center justify-center py-1.5 text-sm text-muted-foreground">

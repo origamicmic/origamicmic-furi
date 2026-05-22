@@ -137,11 +137,21 @@ const KANJI_FALLBACK: Record<string, string> = {
   "其": "そ",
   "此": "こ",
   "等": "など",
+  // Extended — common kuromoji misreadings
+  "失": "うしな",
+  "掻": "か",
+  "揺": "ゆ",
+  "蘇": "よみがえ",
+  "繕": "つくろ",
+  "綻": "ほころ",
+  "檻": "おり",
+  "涎": "よだれ",
 }
 
-const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "じる", "ずる"]
+const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "じる", "ずる", "がす", "める", "える", "げる", "ける", "せる", "てる", "べる", "れる", "われる"]
 
-async function tryPseudoWordFallback(ch: string, to: "hiragana" | "romaji"): Promise<string | null> {
+async function tryPseudoWordFallbacks(ch: string, to: "hiragana" | "romaji"): Promise<string[]> {
+  const results: string[] = []
   for (const suffix of PSEUDO_SUFFIXES) {
     try {
       const word = ch + suffix
@@ -150,13 +160,15 @@ async function tryPseudoWordFallback(ch: string, to: "hiragana" | "romaji"): Pro
         const stem = reading.slice(0, reading.length - suffix.length)
         if (to === "romaji") {
           const r = await cachedConvert(stem, "romaji")
-          return r ? normalizeRomaji(r) : normalizeRomaji(stem)
+          const romajiStem = r ? normalizeRomaji(r) : normalizeRomaji(stem)
+          if (!results.includes(romajiStem)) results.push(romajiStem)
+        } else {
+          if (!results.includes(stem)) results.push(stem)
         }
-        return stem
       }
     } catch { /* try next */ }
   }
-  return null
+  return results
 }
 
 async function lookupKanjiReading(ch: string, to: "hiragana" | "romaji"): Promise<string | null> {
@@ -165,6 +177,14 @@ async function lookupKanjiReading(ch: string, to: "hiragana" | "romaji"): Promis
     if (to !== "romaji") return fallback
     const r = await cachedConvert(fallback, "romaji")
     return r ?? fallback
+  }
+  return null
+}
+
+function lookupKanjiReadingSync(ch: string, to: "hiragana" | "romaji"): string | null {
+  if (KANJI_FALLBACK[ch]) {
+    if (to !== "romaji") return KANJI_FALLBACK[ch]
+    return KANJI_FALLBACK[ch] // rough romaji fallback
   }
   return null
 }
@@ -282,11 +302,25 @@ async function convertTokenReading(
   surface: string,
   to: "hiragana" | "romaji"
 ): Promise<string> {
-  const result = await tryConvertKuroshiro(surface, to)
-  if (result) return result
-
   const chars = [...surface]
   const singleKanji = chars.length === 1 && KANJI_REGEX.test(chars[0])
+
+  const result = await tryConvertKuroshiro(surface, to)
+
+  // For single kanji, try pseudo-word ONLY when kuromoji clearly failed.
+  if (singleKanji) {
+    const kuromojiFailed = !result || result === chars[0] || KANJI_REGEX.test(result)
+    if (kuromojiFailed) {
+      const candidates = await tryPseudoWordFallbacks(chars[0], to)
+      if (candidates.length > 0) return candidates[0]
+    }
+    // Also check KANJI_FALLBACK for known kuromoji misreadings
+    const fallback = lookupKanjiReadingSync(chars[0], to)
+    if (fallback && (!result || fallback !== result)) return fallback
+  }
+
+  if (result) return result
+
   const readings: string[] = []
   for (const ch of chars) {
     if (KANJI_REGEX.test(ch)) {
@@ -305,8 +339,8 @@ async function convertTokenReading(
       const fallback = await lookupKanjiReading(ch, to)
       if (fallback) { readings.push(fallback); continue }
       if (singleKanji) {
-        const pseudo = await tryPseudoWordFallback(ch, to)
-        if (pseudo) { readings.push(pseudo); continue }
+        const candidates = await tryPseudoWordFallbacks(ch, to)
+        if (candidates.length > 0) { readings.push(candidates[0]); continue }
       }
       readings.push(ch)
     } else {
@@ -344,9 +378,16 @@ export async function convertLine(
   let tokens = parseOkuriganaResult(result, lineIndex)
 
   await Promise.all(tokens.map(async (token) => {
-    if (token.isKanji && token.reading === token.surface) {
+    // Run fallback for any kanji that needs it:
+    // - reading === surface: kuromoji couldn't convert at all
+    // - single kanji with short reading (≤3 kana): likely on-yomi, try kun-yomi
+    const needsFallback = token.isKanji && (
+      token.reading === token.surface ||
+      (token.surface.length === 1 && token.reading.length <= 2 && token.reading !== token.surface)
+    )
+    if (needsFallback) {
       const reading = await convertTokenReading(token.surface, "hiragana")
-      if (reading !== token.surface) {
+      if (reading !== token.surface && reading !== token.reading) {
         token.reading = reading
       }
     }
@@ -368,12 +409,14 @@ export async function convertLine(
     return [token]
   })
 
-  // Merge adjacent kanji tokens that form a compound word
+  // Merge adjacent kanji tokens that form a compound word.
+  // Skip tokens already resolved by fallback (reading ≠ surface).
   let merged = tokens
   for (let i = 0; i < merged.length - 1; i++) {
     const a = merged[i]
     const b = merged[i + 1]
     if (!a.isKanji || !b.isKanji) continue
+    if (a.reading !== a.surface || b.reading !== b.surface) continue
     const combined = a.surface + b.surface
     try {
       const r = await cachedConvert(combined, "hiragana")
