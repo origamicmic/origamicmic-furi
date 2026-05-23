@@ -148,6 +148,72 @@ const KANJI_FALLBACK: Record<string, string> = {
   "涎": "よだれ",
 }
 
+const COMPOUND_READINGS: Record<string, string> = {
+  // 熟字訓 — compound kanji with fixed special readings
+  "今日": "きょう",
+  "明日": "あした",
+  "昨日": "きのう",
+  "明後日": "あさって",
+  "一昨日": "おととい",
+  "大人": "おとな",
+  "一人": "ひとり",
+  "二人": "ふたり",
+  "下手": "へた",
+  "上手": "じょうず",
+  "眼鏡": "めがね",
+  "浴衣": "ゆかた",
+  "果物": "くだもの",
+  "田舎": "いなか",
+  "乙女": "おとめ",
+  "河岸": "かし",
+  "小豆": "あずき",
+  "海苔": "のり",
+  "梅雨": "つゆ",
+
+  // 促音便 counters (ち・つ・く → っ before k/s/t/h/p)
+  "一回": "いっかい",
+  "六回": "ろっかい",
+  "八回": "はっかい",
+  "十回": "じゅっかい",
+  "一本": "いっぽん",
+  "六本": "ろっぽん",
+  "八本": "はっぽん",
+  "十本": "じゅっぽん",
+  "一匹": "いっぴき",
+  "六匹": "ろっぴき",
+  "八匹": "はっぴき",
+  "十匹": "じゅっぴき",
+  "一足": "いっそく",
+  "八足": "はっそく",
+
+  // 連濁 counters
+  "三本": "さんぼん",
+  "三匹": "さんびき",
+  "三百": "さんびゃく",
+
+  // 不規則な日付・数量
+  "一日": "ついたち",
+  "二日": "ふつか",
+  "三日": "みっか",
+  "四日": "よっか",
+  "五日": "いつか",
+  "六日": "むいか",
+  "七日": "なのか",
+  "八日": "ようか",
+  "九日": "ここのか",
+  "十日": "とおか",
+  "二十日": "はつか",
+  "二十歳": "はたち",
+  "一目": "ひとめ",
+  "一度": "いちど",
+  "二度": "にど",
+
+  // Multi-kanji compounds kuromoji treats as a single token
+  "三百回": "さんびゃくかい",
+  "六百回": "ろっぴゃくかい",
+  "八百回": "はっぴゃくかい",
+}
+
 const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "じる", "ずる", "がす", "める", "える", "げる", "ける", "せる", "てる", "べる", "れる", "われる"]
 
 async function tryPseudoWordFallbacks(ch: string, to: "hiragana" | "romaji"): Promise<string[]> {
@@ -393,6 +459,18 @@ export async function convertLine(
     }
   }))
 
+  // Override multi-kanji tokens with known compound readings.
+  // This catches cases where kuromoji treated a compound as a single token
+  // but gave a wrong reading (e.g., 三百回 → さんひゃくかい instead of さんびゃくかい).
+  for (const token of tokens) {
+    if (token.isKanji && token.surface.length > 1) {
+      const dictReading = COMPOUND_READINGS[token.surface]
+      if (dictReading && dictReading !== token.reading) {
+        token.reading = dictReading
+      }
+    }
+  }
+
   // Split unresolved multi-char kanji tokens so compound merge can re-attempt
   tokens = tokens.flatMap((token) => {
     if (token.isKanji && token.surface.length > 1 && token.reading === token.surface) {
@@ -410,19 +488,35 @@ export async function convertLine(
   })
 
   // Merge adjacent kanji tokens that form a compound word.
-  // Skip tokens already resolved by fallback (reading ≠ surface).
+  // Strategy: check compound dictionary first (authoritative), then try kuromoshi.
+  // Key fix: also merge when individual tokens have readings but the compound
+  // has a different reading (e.g., 一+回 → いっかい not いち+かい).
   let merged = tokens
   for (let i = 0; i < merged.length - 1; i++) {
     const a = merged[i]
     const b = merged[i + 1]
     if (!a.isKanji || !b.isKanji) continue
-    if (a.reading !== a.surface || b.reading !== b.surface) continue
+
     const combined = a.surface + b.surface
+
+    // Check compound dictionary first (fast, authoritative)
+    const dictReading = COMPOUND_READINGS[combined]
+    if (dictReading) {
+      merged = [...merged.slice(0, i), { ...a, surface: combined, reading: dictReading, tokenId: a.tokenId }, ...merged.slice(i + 2)]
+      i--
+      continue
+    }
+
+    // For short compounds (≤3 chars), try kuromoshi.
+    // Only merge when kuromoshi gives a DIFFERENT reading than the concatenation
+    // of individual readings, indicating it recognizes this as a compound word.
+    if (combined.length > 3) continue
     try {
       const r = await cachedConvert(combined, "hiragana")
-      if (r) {
-        const mergedToken = { ...a, surface: combined, reading: r, tokenId: a.tokenId }
-        merged = [...merged.slice(0, i), mergedToken, ...merged.slice(i + 2)]
+      if (!r || r === combined) continue
+      const concatenated = a.reading + b.reading
+      if (r !== concatenated) {
+        merged = [...merged.slice(0, i), { ...a, surface: combined, reading: r, tokenId: a.tokenId }, ...merged.slice(i + 2)]
         i--
       }
     } catch { /* skip */ }
