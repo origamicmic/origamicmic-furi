@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     template: "%s | Origamicmic Furi",
   },
   description:
-    "搜索或粘贴日语歌词，自动标注平假名与罗马音。Kuromoji + Kuroshiro 引擎，支持高亮对照、在线编辑汉字读音、一键导出 TXT/LRC。日语学习者必备的歌词注音工具。",
+    "搜索或粘贴日语歌词，自动标注平假名与罗马音。在线日语歌词注音工具，Kuromoji + Kuroshiro 引擎，支持高亮对照、在线编辑汉字读音、一键导出 TXT/LRC。",
   keywords: [
     "日语歌词", "注音", "假名", "罗马音", "furigana", "romaji",
     "日语学习", "歌词转换", "汉字转假名", "歌词编辑", "振り仮名",
