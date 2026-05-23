@@ -17,6 +17,7 @@ const urlCache = new Map<string, { url: string; time: number }>()
 const URL_CACHE_TTL = 10 * 60 * 1000
 
 function eapiEncrypt(path: string, body: Record<string, unknown>): string {
+  if (!EAPI_KEY) throw new Error("EAPI_KEY environment variable is required")
   const text = JSON.stringify(body)
   const message = `nobody${path}use${text}md5forencrypt`
   const digest = crypto.createHash("md5").update(message, "utf8").digest("hex")
