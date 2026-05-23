@@ -212,6 +212,14 @@ const COMPOUND_READINGS: Record<string, string> = {
   "三百回": "さんびゃくかい",
   "六百回": "ろっぴゃくかい",
   "八百回": "はっぴゃくかい",
+
+  // Multi-kanji counter compounds with rendaku/gemination
+  "三百本": "さんびゃくほん",
+  "六百本": "ろっぴゃくほん",
+  "八百本": "はっぴゃくほん",
+  "三百匹": "さんびゃくひき",
+  "六百匹": "ろっぴゃくひき",
+  "八百匹": "はっぴゃくひき",
 }
 
 const PSEUDO_SUFFIXES = ["る", "う", "く", "す", "つ", "ぬ", "む", "ぐ", "ぶ", "じる", "ずる", "がす", "める", "える", "げる", "ける", "せる", "てる", "べる", "れる", "われる"]
@@ -261,6 +269,13 @@ export function normalizeLyricsText(text: string): string {
     .replace(/\r/g, "\n")
     .replace(/[　\u3000]+/g, " ")
     .replace(/[ ]{2,}/g, " ")
+    // Remove half-width spaces between Japanese characters (CJK + kana).
+    // Lyrics from many sources use spaces for visual spacing, but they break
+    // kuromoji token adjacency and prevent compound merge from working.
+    .replace(
+      /([\u3040-\u309f\u30a0-\u30ff\uff66-\uff9f\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]) +(?=[\u3040-\u309f\u30a0-\u30ff\uff66-\uff9f\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff])/g,
+      "$1"
+    )
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }
