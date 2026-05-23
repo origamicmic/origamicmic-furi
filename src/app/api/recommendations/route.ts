@@ -124,8 +124,8 @@ export async function POST(request: NextRequest) {
       return Response.json({ error: "今日提交次数已达上限" }, { status: 429 })
     }
 
-    const { data, error } = await supabase
-      .from("recommendations")
+    const { data, error } = await (supabase
+      .from("recommendations") as any)
       .insert({
         word,
         reading,
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
         votes_down: 0,
         is_official: false,
         ip_hash: ipHash,
-      } as any)
+      })
       .select()
 
     if (error) {

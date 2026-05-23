@@ -77,9 +77,9 @@ export async function POST(request: NextRequest) {
 
     const record = current as any
 
-    const { error: updateErr } = await supabase
-      .from("recommendations")
-      .update({ [column]: ((record[column] as number) || 0) + 1 } as any)
+    const { error: updateErr } = await (supabase
+      .from("recommendations") as any)
+      .update({ [column]: ((record[column] as number) || 0) + 1 })
       .eq("id", recommendation_id)
 
     if (updateErr) {
