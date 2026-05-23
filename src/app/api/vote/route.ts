@@ -88,8 +88,8 @@ export async function POST(request: NextRequest) {
     }
 
     const today = new Date().toISOString().slice(0, 10)
-    const record = voteCounters.get(ipHash)
-    if (record && record.date === today) record.count++
+    const counter = voteCounters.get(ipHash)
+    if (counter && counter.date === today) counter.count++
     else voteCounters.set(ipHash, { date: today, count: 1 })
 
     return Response.json({
