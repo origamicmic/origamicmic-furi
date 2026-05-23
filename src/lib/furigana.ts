@@ -146,6 +146,10 @@ const KANJI_FALLBACK: Record<string, string> = {
   "綻": "ほころ",
   "檻": "おり",
   "涎": "よだれ",
+  // Verb stems where kuromoji chooses the wrong reading
+  "生": "い",
+  "残": "のこ",
+  "逃": "のが",
 }
 
 const COMPOUND_READINGS: Record<string, string> = {
@@ -458,10 +462,28 @@ export async function convertLine(
 
   let tokens = parseOkuriganaResult(result, lineIndex)
 
+  // Split multi-char kanji tokens that kuromoji couldn't fully convert.
+  // This includes both fully-failed tokens (reading === surface) and partially-
+  // converted tokens where the reading still contains unconverted kanji
+  // (e.g., 運命逃 → うんめい逃 — 運命 converted but 逃 left as kanji).
+  tokens = tokens.flatMap((token) => {
+    if (token.isKanji && token.surface.length > 1 &&
+        (token.reading === token.surface || KANJI_REGEX.test(token.reading))) {
+      return [...token.surface].map((ch, ci) => ({
+        surface: ch,
+        reading: ch,
+        isKanji: KANJI_REGEX.test(ch),
+        isKana: false,
+        isEditable: true,
+        tokenId: `${token.tokenId}-${ci}`,
+        userModified: false,
+      }))
+    }
+    return [token]
+  })
+
+  // Run per-kanji fallback on all tokens (including newly split chars).
   await Promise.all(tokens.map(async (token) => {
-    // Run fallback for any kanji that needs it:
-    // - reading === surface: kuromoji couldn't convert at all
-    // - single kanji with short reading (≤3 kana): likely on-yomi, try kun-yomi
     const needsFallback = token.isKanji && (
       token.reading === token.surface ||
       (token.surface.length === 1 && token.reading.length <= 2 && token.reading !== token.surface)
@@ -485,22 +507,6 @@ export async function convertLine(
       }
     }
   }
-
-  // Split unresolved multi-char kanji tokens so compound merge can re-attempt
-  tokens = tokens.flatMap((token) => {
-    if (token.isKanji && token.surface.length > 1 && token.reading === token.surface) {
-      return [...token.surface].map((ch, ci) => ({
-        surface: ch,
-        reading: ch,
-        isKanji: KANJI_REGEX.test(ch),
-        isKana: false,
-        isEditable: true,
-        tokenId: `${token.tokenId}-${ci}`,
-        userModified: false,
-      }))
-    }
-    return [token]
-  })
 
   // Merge adjacent kanji tokens that form a compound word.
   // Strategy: check compound dictionary first (authoritative), then try kuromoshi.
@@ -529,6 +535,9 @@ export async function convertLine(
     try {
       const r = await cachedConvert(combined, "hiragana")
       if (!r || r === combined) continue
+      // Refuse to merge if the compound reading still contains kanji —
+      // this would undo the per-kanji fallback work (e.g., 運命+逃).
+      if (KANJI_REGEX.test(r)) continue
       const concatenated = a.reading + b.reading
       if (r !== concatenated) {
         merged = [...merged.slice(0, i), { ...a, surface: combined, reading: r, tokenId: a.tokenId }, ...merged.slice(i + 2)]
